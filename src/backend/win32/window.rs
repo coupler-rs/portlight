@@ -8,7 +8,10 @@ use std::{mem, ptr, slice};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{FALSE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{self as gdi, HBRUSH};
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
+use windows::Win32::UI::Controls::{HOVER_DEFAULT, WM_MOUSELEAVE};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    ReleaseCapture, SetCapture, TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     self as msg, AdjustWindowRectEx, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect,
     GetWindowLongPtrW, LoadCursorW, RegisterClassW, SetCursor, SetCursorPos, SetWindowLongPtrW,
@@ -164,6 +167,18 @@ pub unsafe extern "system" fn wnd_proc(
                 app_state.catch_unwind(|| {
                     let state = WindowState::from_raw(state_ptr);
 
+                    if !state.mouse_in_window.get() {
+                        state.mouse_in_window.set(true);
+                        state.handle_event(Event::MouseEnter);
+
+                        let _ = TrackMouseEvent(&mut TRACKMOUSEEVENT {
+                            cbSize: mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                            dwFlags: TME_LEAVE,
+                            hwndTrack: hwnd,
+                            dwHoverTime: HOVER_DEFAULT,
+                        });
+                    }
+
                     let point_physical = Point {
                         x: GET_X_LPARAM(lparam) as f64,
                         y: GET_Y_LPARAM(lparam) as f64,
@@ -174,6 +189,13 @@ pub unsafe extern "system" fn wnd_proc(
                 });
 
                 return LRESULT(0);
+            }
+            WM_MOUSELEAVE => {
+                app_state.catch_unwind(|| {
+                    let state = WindowState::from_raw(state_ptr);
+                    state.mouse_in_window.set(false);
+                    state.handle_event(Event::MouseExit);
+                });
             }
             msg::WM_LBUTTONDOWN
             | msg::WM_LBUTTONUP
@@ -283,6 +305,7 @@ pub unsafe extern "system" fn wnd_proc(
 pub struct WindowState {
     hwnd: Cell<Option<HWND>>,
     mouse_down_count: Cell<isize>,
+    mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
     app_state: Rc<AppState>,
     handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
@@ -435,6 +458,7 @@ impl WindowInner {
             let state = Rc::new(WindowState {
                 hwnd: Cell::new(Some(hwnd)),
                 mouse_down_count: Cell::new(0),
+                mouse_in_window: Cell::new(false),
                 cursor: Cell::new(Cursor::Arrow),
                 app_state: Rc::clone(&app.inner.state),
                 handler: RefCell::new(Box::new(handler)),
