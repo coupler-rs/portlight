@@ -97,6 +97,14 @@ impl View {
                 Self::is_flipped as unsafe extern "C" fn(_, _) -> _,
             );
             builder.add_method(
+                sel!(mouseEntered:),
+                Self::mouse_entered as unsafe extern "C" fn(_, _, _),
+            );
+            builder.add_method(
+                sel!(mouseExited:),
+                Self::mouse_exited as unsafe extern "C" fn(_, _, _),
+            );
+            builder.add_method(
                 sel!(mouseMoved:),
                 Self::mouse_moved as unsafe extern "C" fn(_, _, _),
             );
@@ -195,6 +203,18 @@ impl View {
 
     unsafe extern "C" fn is_flipped(&self, _: Sel) -> Bool {
         Bool::YES
+    }
+
+    unsafe extern "C" fn mouse_entered(&self, _: Sel, _event: Option<&NSEvent>) {
+        self.state().app_state.catch_unwind(|| {
+            self.handle_event(Event::MouseEnter);
+        });
+    }
+
+    unsafe extern "C" fn mouse_exited(&self, _: Sel, _event: Option<&NSEvent>) {
+        self.state().app_state.catch_unwind(|| {
+            self.handle_event(Event::MouseExit);
+        });
     }
 
     unsafe extern "C" fn mouse_moved(&self, _: Sel, event: Option<&NSEvent>) {
