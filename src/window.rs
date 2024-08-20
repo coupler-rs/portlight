@@ -133,6 +133,8 @@ pub enum Event<'a> {
     Expose(&'a [Rect]),
     Frame,
     Close,
+    GainFocus,
+    LoseFocus,
     MouseEnter,
     MouseExit,
     MouseMove(Point),
