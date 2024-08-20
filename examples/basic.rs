@@ -33,6 +33,18 @@ impl State {
 
                 cx.window().present(Bitmap::new(&self.framebuffer, self.width, self.height));
             }
+            Event::GainFocus => {
+                println!("gain focus");
+            }
+            Event::LoseFocus => {
+                println!("lose focus");
+            }
+            Event::MouseEnter => {
+                println!("mouse enter");
+            }
+            Event::MouseExit => {
+                println!("mouse exit");
+            }
             Event::MouseMove(pos) => {
                 println!("mouse move: {:?}", pos);
             }
