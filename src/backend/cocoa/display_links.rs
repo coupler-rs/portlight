@@ -70,7 +70,7 @@ extern "C" fn release(info: *const c_void) {
 extern "C" fn perform(info: *const c_void) {
     let state = unsafe { &*(info as *mut DisplayState) };
 
-    state.app_state.catch_unwind(|| {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
         let windows: Vec<*const View> = state.app_state.windows.borrow().keys().copied().collect();
         for ptr in windows {
             let window_state = state.app_state.windows.borrow().get(&ptr).cloned();
@@ -83,7 +83,11 @@ extern "C" fn perform(info: *const c_void) {
                 }
             }
         }
-    });
+    }));
+
+    if let Err(panic) = result {
+        state.app_state.propagate_panic(panic);
+    }
 }
 
 struct DisplayState {

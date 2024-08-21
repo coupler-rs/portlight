@@ -176,6 +176,14 @@ impl View {
         unsafe { &*(self.state_ivar().get() as *const WindowState) }
     }
 
+    fn catch_unwind<F: FnOnce()>(&self, f: F) {
+        let result = panic::catch_unwind(AssertUnwindSafe(f));
+
+        if let Err(panic) = result {
+            self.state().app_state.propagate_panic(panic);
+        }
+    }
+
     pub fn handle_event(&self, event: Event) -> Option<Response> {
         let state_rc = unsafe { Rc::from_raw(self.state_ivar().get() as *const WindowState) };
         let state = Rc::clone(&state_rc);
@@ -207,19 +215,19 @@ impl View {
     }
 
     unsafe extern "C" fn mouse_entered(&self, _: Sel, _event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             self.handle_event(Event::MouseEnter);
         });
     }
 
     unsafe extern "C" fn mouse_exited(&self, _: Sel, _event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             self.handle_event(Event::MouseExit);
         });
     }
 
     unsafe extern "C" fn mouse_moved(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let Some(event) = event else {
                 return;
             };
@@ -233,7 +241,7 @@ impl View {
     }
 
     unsafe extern "C" fn mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let result = self.handle_event(Event::MouseDown(MouseButton::Left));
 
             if result != Some(Response::Capture) {
@@ -243,7 +251,7 @@ impl View {
     }
 
     unsafe extern "C" fn mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let result = self.handle_event(Event::MouseUp(MouseButton::Left));
 
             if result != Some(Response::Capture) {
@@ -253,7 +261,7 @@ impl View {
     }
 
     unsafe extern "C" fn right_mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let result = self.handle_event(Event::MouseDown(MouseButton::Right));
 
             if result != Some(Response::Capture) {
@@ -263,7 +271,7 @@ impl View {
     }
 
     unsafe extern "C" fn right_mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let result = self.handle_event(Event::MouseUp(MouseButton::Right));
 
             if result != Some(Response::Capture) {
@@ -273,7 +281,7 @@ impl View {
     }
 
     unsafe extern "C" fn other_mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let Some(event) = event else {
                 return;
             };
@@ -292,7 +300,7 @@ impl View {
     }
 
     unsafe extern "C" fn other_mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let Some(event) = event else {
                 return;
             };
@@ -311,7 +319,7 @@ impl View {
     }
 
     unsafe extern "C" fn scroll_wheel(&self, _: Sel, event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             let Some(event) = event else {
                 return;
             };
@@ -332,13 +340,13 @@ impl View {
     }
 
     unsafe extern "C" fn cursor_update(&self, _: Sel, _event: Option<&NSEvent>) {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             self.state().update_cursor();
         });
     }
 
     unsafe extern "C" fn window_should_close(&self, _: Sel, _sender: &NSWindow) -> Bool {
-        self.state().app_state.catch_unwind(|| {
+        self.catch_unwind(|| {
             self.handle_event(Event::Close);
         });
 

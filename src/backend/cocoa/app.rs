@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::panic::{self, AssertUnwindSafe};
+use std::panic;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -79,18 +79,13 @@ impl AppState {
         }
     }
 
-    pub(crate) fn catch_unwind<F: FnOnce()>(&self, f: F) {
-        let result = panic::catch_unwind(AssertUnwindSafe(f));
-
-        if let Err(panic) = result {
-            if self.running.get() {
-                // If we own the event loop, exit and propagate the panic upwards.
-                self.panic.set(Some(panic));
-                self.exit();
-            } else {
-                // Otherwise, just abort.
-                std::process::abort();
-            }
+    pub(crate) fn propagate_panic(&self, panic: Box<dyn Any + Send + 'static>) {
+        // If we own the event loop, exit and propagate the panic upwards. Otherwise, just abort.
+        if self.running.get() {
+            self.panic.set(Some(panic));
+            self.exit();
+        } else {
+            std::process::abort();
         }
     }
 }

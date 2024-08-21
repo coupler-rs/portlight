@@ -31,19 +31,23 @@ extern "C" fn release(info: *const c_void) {
 }
 
 extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
-    let state_rc = unsafe { Rc::from_raw(info as *const TimerState) };
-    let state = Rc::clone(&state_rc);
-    let _ = Rc::into_raw(state_rc);
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        let state_rc = unsafe { Rc::from_raw(info as *const TimerState) };
+        let state = Rc::clone(&state_rc);
+        let _ = Rc::into_raw(state_rc);
 
-    let app = AppHandle::from_inner(AppInner {
-        state: Rc::clone(&state.app_state),
-    });
-
-    app.inner.state.catch_unwind(|| {
+        let app = AppHandle::from_inner(AppInner {
+            state: Rc::clone(&state.app_state),
+        });
         let timer = Timer::from_inner(TimerInner { state });
         let cx = TimerContext::new(&app, &timer);
         timer.inner.state.handler.borrow_mut()(&cx);
-    });
+    }));
+
+    if let Err(panic) = result {
+        let state = unsafe { &*(info as *const TimerState) };
+        state.app_state.propagate_panic(panic);
+    }
 }
 
 struct TimerState {
