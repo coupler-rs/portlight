@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::rc::Rc;
 use std::time::Duration;
@@ -19,13 +20,14 @@ extern "C" fn retain(info: *const c_void) -> *const c_void {
 }
 
 extern "C" fn release(info: *const c_void) {
-    // Hold a reference to AppState, since TimerState is being dropped
-    let state = unsafe { &*(info as *mut TimerState) };
-    let app_state = Rc::clone(&state.app_state);
-
-    app_state.catch_unwind(|| {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
         unsafe { Rc::decrement_strong_count(info as *const TimerState) };
-    });
+    }));
+
+    // If a panic occurs while dropping the Rc<WindowState>, the only thing left to do is abort.
+    if let Err(_panic) = result {
+        std::process::abort();
+    }
 }
 
 extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {

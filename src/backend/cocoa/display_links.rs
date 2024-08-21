@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::rc::Rc;
 
@@ -56,13 +57,14 @@ extern "C" fn retain(info: *const c_void) -> *const c_void {
 }
 
 extern "C" fn release(info: *const c_void) {
-    // Hold a reference to AppState, since DisplayState is being dropped
-    let state = unsafe { &*(info as *const DisplayState) };
-    let app_state = Rc::clone(&state.app_state);
-
-    app_state.catch_unwind(|| {
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
         unsafe { Rc::decrement_strong_count(info as *const DisplayState) };
-    });
+    }));
+
+    // If a panic occurs while dropping the Rc<DisplayState>, the only thing left to do is abort.
+    if let Err(_panic) = result {
+        std::process::abort();
+    }
 }
 
 extern "C" fn perform(info: *const c_void) {
