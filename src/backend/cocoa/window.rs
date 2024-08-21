@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::ops::{Deref, DerefMut};
+use std::panic::{self, AssertUnwindSafe};
 use std::rc::Rc;
 
 use objc2::declare::ClassBuilder;
@@ -345,16 +346,19 @@ impl View {
     }
 
     unsafe extern "C" fn dealloc(this: *mut Self, _: Sel) {
-        // Hold a reference to AppState, since WindowState is being dropped
-        let app_state = Rc::clone(&(*this).state().app_state);
-
-        app_state.catch_unwind(|| {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
             drop(Rc::from_raw(
                 (*this).state_ivar().get() as *const WindowState
             ));
+        }));
 
-            let () = msg_send![super(this, NSView::class()), dealloc];
-        });
+        // If a panic occurs while dropping the Rc<WindowState>, the only thing left to do is
+        // abort.
+        if let Err(_panic) = result {
+            std::process::abort();
+        }
+
+        let () = msg_send![super(this, NSView::class()), dealloc];
     }
 }
 
