@@ -91,6 +91,7 @@ impl AsRawFd for App {
     }
 }
 
+#[derive(Clone)]
 pub struct AppHandle {
     pub(crate) inner: backend::AppInner,
     // ensure !Send and !Sync on all platforms
