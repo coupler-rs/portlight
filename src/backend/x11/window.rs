@@ -166,6 +166,8 @@ impl WindowInner {
         let size_physical = options.size.scale(app_state.scale);
 
         let event_mask = EventMask::EXPOSURE
+            | EventMask::ENTER_WINDOW
+            | EventMask::LEAVE_WINDOW
             | EventMask::POINTER_MOTION
             | EventMask::BUTTON_PRESS
             | EventMask::BUTTON_RELEASE;

@@ -250,6 +250,24 @@ impl AppInner {
                         }
                     }
                 }
+                protocol::Event::EnterNotify(event) => {
+                    let window = self.state.windows.borrow().get(&event.event).cloned();
+                    if let Some(window) = window {
+                        window.handle_event(Event::MouseEnter);
+
+                        let point = Point {
+                            x: event.event_x as f64,
+                            y: event.event_y as f64,
+                        };
+                        window.handle_event(Event::MouseMove(point));
+                    }
+                }
+                protocol::Event::LeaveNotify(event) => {
+                    let window = self.state.windows.borrow().get(&event.event).cloned();
+                    if let Some(window) = window {
+                        window.handle_event(Event::MouseExit);
+                    }
+                }
                 protocol::Event::MotionNotify(event) => {
                     let window = self.state.windows.borrow().get(&event.event).cloned();
                     if let Some(window) = window {
