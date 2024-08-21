@@ -58,30 +58,35 @@ pub unsafe extern "system" fn message_wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     let app_state_ptr = GetWindowLongPtrW(hwnd, msg::GWLP_USERDATA) as *mut AppState;
-    if !app_state_ptr.is_null() {
-        let app_state_rc = Rc::from_raw(app_state_ptr);
-        let app_state = Rc::clone(&app_state_rc);
-        let _ = Rc::into_raw(app_state_rc);
+    if app_state_ptr.is_null() {
+        return DefWindowProcW(hwnd, msg, wparam, lparam);
+    }
 
-        match msg {
-            msg::WM_TIMER => {
-                app_state.catch_unwind(|| {
-                    app_state.timers.handle_timer(&app_state, wparam.0);
-                });
-            }
-            WM_USER_VBLANK => {
-                app_state.catch_unwind(|| {
-                    app_state.vsync_threads.handle_vblank(&app_state, HMONITOR(lparam.0));
-                });
-            }
-            msg::WM_DESTROY => {
-                SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, 0);
-                app_state.catch_unwind(|| {
-                    drop(Rc::from_raw(app_state_ptr));
-                });
-            }
-            _ => {}
+    let app_state_rc = Rc::from_raw(app_state_ptr);
+    let app_state = Rc::clone(&app_state_rc);
+    let _ = Rc::into_raw(app_state_rc);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| match msg {
+        msg::WM_TIMER => {
+            app_state.timers.handle_timer(&app_state, wparam.0);
         }
+        WM_USER_VBLANK => {
+            app_state.vsync_threads.handle_vblank(&app_state, HMONITOR(lparam.0));
+        }
+        msg::WM_DESTROY => {
+            SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, 0);
+            drop(Rc::from_raw(app_state_ptr));
+        }
+        _ => {}
+    }));
+
+    if let Err(panic) = result {
+        app_state.propagate_panic(panic);
+    }
+
+    // If a panic occurs while dropping the Rc<AppState>, the only thing left to do is abort.
+    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(app_state))) {
+        std::process::abort();
     }
 
     DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -123,18 +128,13 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub(crate) fn catch_unwind<F: FnOnce()>(&self, f: F) {
-        let result = panic::catch_unwind(AssertUnwindSafe(f));
-
-        if let Err(panic) = result {
-            if self.running.get() {
-                // If we own the event loop, exit and propagate the panic upwards.
-                self.panic.set(Some(panic));
-                unsafe { PostQuitMessage(0) };
-            } else {
-                // Otherwise, just abort.
-                std::process::abort();
-            }
+    pub(crate) fn propagate_panic(&self, panic: Box<dyn Any + Send + 'static>) {
+        // If we own the event loop, exit and propagate the panic upwards. Otherwise, just abort.
+        if self.running.get() {
+            self.panic.set(Some(panic));
+            unsafe { PostQuitMessage(0) };
+        } else {
+            std::process::abort();
         }
     }
 }
