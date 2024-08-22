@@ -109,7 +109,9 @@ pub unsafe extern "system" fn wnd_proc(
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     }
 
-    let state = WindowState::from_raw(state_ptr);
+    let window = Window::from_inner(WindowInner::from_state(WindowState::from_raw(state_ptr)));
+    let state = &window.inner.state;
+    let cx = WindowContext::new(&state.app, &window);
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         match msg {
@@ -156,7 +158,7 @@ pub unsafe extern "system" fn wnd_proc(
                 gdi::DeleteObject(rgn);
 
                 // Only validate the dirty region if we successfully invoked the event handler.
-                if state.handle_event(Event::Expose(&rects)).is_some() {
+                if state.handle_event(&cx, Event::Expose(&rects)).is_some() {
                     gdi::ValidateRgn(hwnd, gdi::HRGN(0));
                 }
 
@@ -165,7 +167,7 @@ pub unsafe extern "system" fn wnd_proc(
             msg::WM_MOUSEMOVE => {
                 if !state.mouse_in_window.get() {
                     state.mouse_in_window.set(true);
-                    state.handle_event(Event::MouseEnter);
+                    state.handle_event(&cx, Event::MouseEnter);
 
                     let _ = TrackMouseEvent(&mut TRACKMOUSEEVENT {
                         cbSize: mem::size_of::<TRACKMOUSEEVENT>() as u32,
@@ -181,13 +183,13 @@ pub unsafe extern "system" fn wnd_proc(
                 };
                 let point = point_physical.scale(state.scale().recip());
 
-                state.handle_event(Event::MouseMove(point));
+                state.handle_event(&cx, Event::MouseMove(point));
 
                 return Some(LRESULT(0));
             }
             WM_MOUSELEAVE => {
                 state.mouse_in_window.set(false);
-                state.handle_event(Event::MouseExit);
+                state.handle_event(&cx, Event::MouseExit);
             }
             msg::WM_LBUTTONDOWN
             | msg::WM_LBUTTONUP
@@ -239,7 +241,7 @@ pub unsafe extern "system" fn wnd_proc(
                             _ => {}
                         }
 
-                        if state.handle_event(event) == Some(Response::Capture) {
+                        if state.handle_event(&cx, event) == Some(Response::Capture) {
                             return Some(LRESULT(0));
                         }
                     }
@@ -253,12 +255,12 @@ pub unsafe extern "system" fn wnd_proc(
                     _ => unreachable!(),
                 };
 
-                if state.handle_event(Event::Scroll(point)) == Some(Response::Capture) {
+                if state.handle_event(&cx, Event::Scroll(point)) == Some(Response::Capture) {
                     return Some(LRESULT(0));
                 }
             }
             msg::WM_CLOSE => {
-                state.handle_event(Event::Close);
+                state.handle_event(&cx, Event::Close);
                 return Some(LRESULT(0));
             }
             msg::WM_DESTROY => {
@@ -280,7 +282,7 @@ pub unsafe extern "system" fn wnd_proc(
     };
 
     // If a panic occurs while dropping the Rc<WindowState>, the only thing left to do is abort.
-    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(state))) {
+    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(window))) {
         std::process::abort();
     }
 
@@ -341,13 +343,9 @@ impl WindowState {
         }
     }
 
-    pub fn handle_event(self: &Rc<WindowState>, event: Event) -> Option<Response> {
+    pub fn handle_event(&self, cx: &WindowContext, event: Event) -> Option<Response> {
         if let Ok(mut handler) = self.handler.try_borrow_mut() {
-            let window = Window::from_inner(WindowInner {
-                state: Rc::clone(self),
-            });
-            let cx = WindowContext::new(&window.inner.state.app, &window);
-            return Some(handler(&cx, event));
+            return Some(handler(cx, event));
         }
 
         None
@@ -362,10 +360,14 @@ impl WindowState {
 
 #[derive(Clone)]
 pub struct WindowInner {
-    state: Rc<WindowState>,
+    pub(super) state: Rc<WindowState>,
 }
 
 impl WindowInner {
+    pub fn from_state(state: Rc<WindowState>) -> WindowInner {
+        WindowInner { state }
+    }
+
     pub fn open<H>(options: &WindowOptions, app: &AppHandle, handler: H) -> Result<WindowInner>
     where
         H: FnMut(&WindowContext, Event) -> Response + 'static,

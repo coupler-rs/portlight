@@ -12,8 +12,9 @@ use windows::Win32::Graphics::Gdi::{MonitorFromWindow, HMONITOR, MONITOR_DEFAULT
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use super::app::AppState;
+use super::window::WindowInner;
 use super::WM_USER_VBLANK;
-use crate::{AppHandle, Event};
+use crate::{AppHandle, Event, Window, WindowContext};
 
 struct ThreadState {
     pending: AtomicBool,
@@ -99,9 +100,11 @@ impl VsyncThreads {
         for hwnd in windows {
             let window_monitor = unsafe { MonitorFromWindow(HWND(hwnd), MONITOR_DEFAULTTONEAREST) };
             if window_monitor == monitor {
-                let window = app.inner.state.windows.borrow().get(&hwnd).cloned();
-                if let Some(window) = window {
-                    window.handle_event(Event::Frame);
+                let window_state = app.inner.state.windows.borrow().get(&hwnd).cloned();
+                if let Some(window_state) = window_state {
+                    let window = Window::from_inner(WindowInner::from_state(window_state));
+                    let cx = WindowContext::new(&app, &window);
+                    window.inner.state.handle_event(&cx, Event::Frame);
                 }
             }
         }
