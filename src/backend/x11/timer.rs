@@ -12,7 +12,7 @@ pub type TimerId = usize;
 struct TimerState {
     timer_id: TimerId,
     duration: Duration,
-    app_state: Rc<AppState>,
+    app: AppHandle,
     handler: RefCell<Box<dyn FnMut(&TimerContext)>>,
 }
 
@@ -78,7 +78,7 @@ impl Timers {
         let state = Rc::new(TimerState {
             timer_id,
             duration,
-            app_state: Rc::clone(app_state),
+            app: AppHandle::from_inner(AppInner::from_state(Rc::clone(app_state))),
             handler: RefCell::new(Box::new(handler)),
         });
 
@@ -92,7 +92,7 @@ impl Timers {
         TimerInner { state }
     }
 
-    pub fn poll(&self, app_state: &Rc<AppState>) {
+    pub fn poll(&self) {
         let now = Instant::now();
 
         // Check with < and not <= so that we don't process a timer twice during this loop
@@ -102,11 +102,8 @@ impl Timers {
             // If we don't find the timer in `self.timers`, it has been canceled
             let timer_state = self.timers.borrow().get(&next.timer_id).cloned();
             if let Some(timer_state) = timer_state {
-                let app = AppHandle::from_inner(AppInner {
-                    state: Rc::clone(&app_state),
-                });
                 let timer = Timer::from_inner(TimerInner { state: timer_state });
-                let cx = TimerContext::new(&app, &timer);
+                let cx = TimerContext::new(&timer.inner.state.app, &timer);
                 timer.inner.state.handler.borrow_mut()(&cx);
 
                 // If we fall behind by more than one timer interval, reset the timer's phase
@@ -133,6 +130,7 @@ pub struct TimerInner {
 
 impl TimerInner {
     pub fn cancel(&self) {
-        self.state.app_state.timers.timers.borrow_mut().remove(&self.state.timer_id);
+        let timers = &self.state.app.inner.state.timers;
+        timers.timers.borrow_mut().remove(&self.state.timer_id);
     }
 }

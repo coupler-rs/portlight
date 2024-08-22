@@ -105,6 +105,10 @@ pub struct AppInner {
 }
 
 impl AppInner {
+    pub fn from_state(state: Rc<AppState>) -> AppInner {
+        AppInner { state }
+    }
+
     pub fn new(_options: &AppOptions) -> Result<AppInner> {
         let (connection, screen_index) = x11rb::connect(None)?;
         let atoms = Atoms::new(&connection)?.reply()?;
@@ -163,7 +167,7 @@ impl AppInner {
 
         loop {
             self.drain_events()?;
-            self.state.timers.poll(&self.state);
+            self.state.timers.poll();
             self.drain_events()?;
 
             if self.state.run_state.get() == RunState::Exiting {
@@ -205,7 +209,7 @@ impl AppInner {
         let _run_guard = RunGuard::new(&self.state.run_state)?;
 
         self.drain_events()?;
-        self.state.timers.poll(&self.state);
+        self.state.timers.poll();
         self.drain_events()?;
 
         Ok(())
