@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
-use super::app::{AppInner, AppState};
+use super::app::AppState;
 use crate::{AppHandle, Timer, TimerContext};
 
 struct TimerState {
@@ -63,12 +63,9 @@ impl Timers {
         TimerInner { state }
     }
 
-    pub fn handle_timer(&self, app_state: &Rc<AppState>, timer_id: usize) {
-        let timer_state = app_state.timers.timers.borrow().get(&timer_id).cloned();
+    pub fn handle_timer(&self, app: &AppHandle, timer_id: usize) {
+        let timer_state = app.inner.state.timers.timers.borrow().get(&timer_id).cloned();
         if let Some(timer_state) = timer_state {
-            let app = AppHandle::from_inner(AppInner {
-                state: Rc::clone(&app_state),
-            });
             let timer = Timer::from_inner(TimerInner { state: timer_state });
             let cx = TimerContext::new(&app, &timer);
             timer.inner.state.handler.borrow_mut()(&cx);

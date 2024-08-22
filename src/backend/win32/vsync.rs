@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -14,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use super::app::AppState;
 use super::WM_USER_VBLANK;
-use crate::Event;
+use crate::{AppHandle, Event};
 
 struct ThreadState {
     pending: AtomicBool,
@@ -95,12 +94,12 @@ impl VsyncThreads {
         }
     }
 
-    pub fn handle_vblank(&self, app_state: &Rc<AppState>, monitor: HMONITOR) {
-        let windows: Vec<isize> = app_state.windows.borrow().keys().copied().collect();
+    pub fn handle_vblank(&self, app: &AppHandle, monitor: HMONITOR) {
+        let windows: Vec<isize> = app.inner.state.windows.borrow().keys().copied().collect();
         for hwnd in windows {
             let window_monitor = unsafe { MonitorFromWindow(HWND(hwnd), MONITOR_DEFAULTTONEAREST) };
             if window_monitor == monitor {
-                let window = app_state.windows.borrow().get(&hwnd).cloned();
+                let window = app.inner.state.windows.borrow().get(&hwnd).cloned();
                 if let Some(window) = window {
                     window.handle_event(Event::Frame);
                 }

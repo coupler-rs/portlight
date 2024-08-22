@@ -21,7 +21,7 @@ use super::timer::{TimerInner, Timers};
 use super::vsync::VsyncThreads;
 use super::window::{self, WindowState};
 use super::{class_name, hinstance, to_wstring, WM_USER_VBLANK};
-use crate::{AppMode, AppOptions, Error, Result, TimerContext};
+use crate::{AppHandle, AppMode, AppOptions, Error, Result, TimerContext};
 
 fn register_message_class() -> Result<PCWSTR> {
     let class_name = to_wstring(&class_name("message-"));
@@ -66,12 +66,14 @@ pub unsafe extern "system" fn message_wnd_proc(
     let app_state = Rc::clone(&app_state_rc);
     let _ = Rc::into_raw(app_state_rc);
 
+    let app = AppHandle::from_inner(AppInner::from_state(app_state));
+
     let result = panic::catch_unwind(AssertUnwindSafe(|| match msg {
         msg::WM_TIMER => {
-            app_state.timers.handle_timer(&app_state, wparam.0);
+            app.inner.state.timers.handle_timer(&app, wparam.0);
         }
         WM_USER_VBLANK => {
-            app_state.vsync_threads.handle_vblank(&app_state, HMONITOR(lparam.0));
+            app.inner.state.vsync_threads.handle_vblank(&app, HMONITOR(lparam.0));
         }
         msg::WM_DESTROY => {
             SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, 0);
@@ -81,11 +83,11 @@ pub unsafe extern "system" fn message_wnd_proc(
     }));
 
     if let Err(panic) = result {
-        app_state.propagate_panic(panic);
+        app.inner.state.propagate_panic(panic);
     }
 
     // If a panic occurs while dropping the Rc<AppState>, the only thing left to do is abort.
-    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(app_state))) {
+    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(app))) {
         std::process::abort();
     }
 
@@ -145,6 +147,10 @@ pub struct AppInner {
 }
 
 impl AppInner {
+    fn from_state(state: Rc<AppState>) -> AppInner {
+        AppInner { state }
+    }
+
     pub fn new(options: &AppOptions) -> Result<AppInner> {
         let message_class = register_message_class()?;
 
