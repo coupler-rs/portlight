@@ -13,10 +13,10 @@ use objc2_foundation::{ns_string, NSNumber};
 use core_foundation::base::{CFRelease, CFTypeRef};
 use core_foundation::runloop::*;
 
-use super::app::AppState;
+use super::app::{AppInner, AppState};
 use super::ffi::display_link::*;
-use super::window::View;
-use crate::Event;
+use super::window::{View, WindowInner};
+use crate::{AppHandle, Event, Window, WindowContext};
 
 fn display_from_screen(screen: &NSScreen) -> Option<CGDirectDisplayID> {
     unsafe {
@@ -78,7 +78,13 @@ extern "C" fn perform(info: *const c_void) {
                 if let Some(view) = window_state.view() {
                     let display = display_from_view(&*view);
                     if display == Some(state.display_id) {
-                        view.handle_event(Event::Frame);
+                        let app = AppHandle::from_inner(AppInner {
+                            state: Rc::clone(&state.app_state),
+                        });
+                        let window = Window::from_inner(WindowInner::from_state(window_state));
+                        let cx = WindowContext::new(&app, &window);
+
+                        window.inner.state.handle_event(&cx, Event::Frame);
                     }
                 }
             }

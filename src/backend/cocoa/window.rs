@@ -195,11 +195,7 @@ impl View {
         let window = Window::from_inner(WindowInner { state });
         let cx = WindowContext::new(&app, &window);
 
-        if let Ok(mut handler) = window.inner.state.handler.try_borrow_mut() {
-            return Some(handler(&cx, event));
-        }
-
-        None
+        window.inner.state.handle_event(&cx, event)
     }
 
     pub fn retain(&self) -> Id<View> {
@@ -388,6 +384,14 @@ impl WindowState {
         self.window.borrow().clone()
     }
 
+    pub fn handle_event(&self, cx: &WindowContext, event: Event) -> Option<Response> {
+        if let Ok(mut handler) = self.handler.try_borrow_mut() {
+            return Some(handler(cx, event));
+        }
+
+        None
+    }
+
     fn update_cursor(&self) {
         fn try_get_cursor(selector: Sel) -> Id<NSCursor> {
             unsafe {
@@ -437,10 +441,14 @@ impl WindowState {
 
 #[derive(Clone)]
 pub struct WindowInner {
-    state: Rc<WindowState>,
+    pub(super) state: Rc<WindowState>,
 }
 
 impl WindowInner {
+    pub fn from_state(state: Rc<WindowState>) -> WindowInner {
+        WindowInner { state }
+    }
+
     pub fn open<H>(options: &WindowOptions, app: &AppHandle, handler: H) -> Result<WindowInner>
     where
         H: FnMut(&WindowContext, Event) -> Response + 'static,
