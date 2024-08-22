@@ -100,7 +100,7 @@ impl Drop for AppState {
 
 #[derive(Clone)]
 pub struct AppInner {
-    pub state: Rc<AppState>,
+    pub(super) state: Rc<AppState>,
 }
 
 impl AppInner {
