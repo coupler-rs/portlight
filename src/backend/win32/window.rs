@@ -19,7 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ShowWindow, UnregisterClassW, CREATESTRUCTW, HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WNDCLASSW,
 };
 
-use super::app::{AppInner, AppState};
+use super::app::AppState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
     AppHandle, Bitmap, Cursor, Error, Event, MouseButton, Point, RawWindow, Rect, Response, Result,
@@ -274,7 +274,7 @@ pub unsafe extern "system" fn wnd_proc(
     let return_value = match result {
         Ok(return_value) => return_value,
         Err(panic) => {
-            state.app_state.propagate_panic(panic);
+            state.app.inner.state.propagate_panic(panic);
             None
         }
     };
@@ -296,7 +296,7 @@ pub struct WindowState {
     mouse_down_count: Cell<isize>,
     mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
-    app_state: Rc<AppState>,
+    app: AppHandle,
     handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
 }
 
@@ -333,7 +333,7 @@ impl WindowState {
 
     pub fn scale(&self) -> f64 {
         if let Some(hwnd) = self.hwnd.get() {
-            let dpi = unsafe { self.app_state.dpi.dpi_for_window(hwnd) };
+            let dpi = unsafe { self.app.inner.state.dpi.dpi_for_window(hwnd) };
 
             dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64
         } else {
@@ -343,13 +343,10 @@ impl WindowState {
 
     pub fn handle_event(self: &Rc<WindowState>, event: Event) -> Option<Response> {
         if let Ok(mut handler) = self.handler.try_borrow_mut() {
-            let app = AppHandle::from_inner(AppInner {
-                state: Rc::clone(&self.app_state),
-            });
             let window = Window::from_inner(WindowInner {
                 state: Rc::clone(self),
             });
-            let cx = WindowContext::new(&app, &window);
+            let cx = WindowContext::new(&window.inner.state.app, &window);
             return Some(handler(&cx, event));
         }
 
@@ -449,7 +446,7 @@ impl WindowInner {
                 mouse_down_count: Cell::new(0),
                 mouse_in_window: Cell::new(false),
                 cursor: Cell::new(Cursor::Arrow),
-                app_state: Rc::clone(&app.inner.state),
+                app: app.clone(),
                 handler: RefCell::new(Box::new(handler)),
             });
 
@@ -624,7 +621,7 @@ impl WindowInner {
 
     pub fn close(&self) {
         if let Some(hwnd) = self.state.hwnd.get() {
-            self.state.app_state.windows.borrow_mut().remove(&hwnd.0);
+            self.state.app.inner.state.windows.borrow_mut().remove(&hwnd.0);
         }
 
         self.state.close();
