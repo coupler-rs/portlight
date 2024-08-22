@@ -36,23 +36,20 @@ extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
         let state = Rc::clone(&state_rc);
         let _ = Rc::into_raw(state_rc);
 
-        let app = AppHandle::from_inner(AppInner {
-            state: Rc::clone(&state.app_state),
-        });
         let timer = Timer::from_inner(TimerInner { state });
-        let cx = TimerContext::new(&app, &timer);
+        let cx = TimerContext::new(&timer.inner.state.app, &timer);
         timer.inner.state.handler.borrow_mut()(&cx);
     }));
 
     if let Err(panic) = result {
         let state = unsafe { &*(info as *const TimerState) };
-        state.app_state.propagate_panic(panic);
+        state.app.inner.state.propagate_panic(panic);
     }
 }
 
 struct TimerState {
     timer_ref: Cell<Option<CFRunLoopTimerRef>>,
-    app_state: Rc<AppState>,
+    app: AppHandle,
     handler: RefCell<Box<dyn FnMut(&TimerContext)>>,
 }
 
@@ -89,7 +86,7 @@ impl Timers {
     {
         let state = Rc::new(TimerState {
             timer_ref: Cell::new(None),
-            app_state: Rc::clone(app_state),
+            app: AppHandle::from_inner(AppInner::from_state(Rc::clone(app_state))),
             handler: RefCell::new(Box::new(handler)),
         });
 
@@ -142,7 +139,7 @@ pub struct TimerInner {
 impl TimerInner {
     pub fn cancel(&self) {
         if let Some(timer_ref) = self.state.timer_ref.get() {
-            self.state.app_state.timers.timers.borrow_mut().remove(&timer_ref);
+            self.state.app.inner.state.timers.timers.borrow_mut().remove(&timer_ref);
         }
 
         self.state.cancel();
