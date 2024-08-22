@@ -37,7 +37,7 @@ pub struct WindowState {
     pub shm_state: RefCell<Option<ShmState>>,
     pub present_state: RefCell<Option<PresentState>>,
     pub expose_rects: RefCell<Vec<Rect>>,
-    pub app_state: Rc<AppState>,
+    pub app: AppHandle,
     pub handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
 }
 
@@ -88,7 +88,7 @@ impl WindowState {
 
     fn deinit_shm(&self) {
         if let Some(shm_state) = self.shm_state.take() {
-            let _ = self.app_state.connection.shm_detach(shm_state.seg_id);
+            let _ = self.app.inner.state.connection.shm_detach(shm_state.seg_id);
 
             unsafe {
                 libc::shmdt(shm_state.ptr);
@@ -97,20 +97,9 @@ impl WindowState {
         }
     }
 
-    pub fn handle_event(self: &Rc<WindowState>, event: Event) -> Response {
-        let app = AppHandle::from_inner(AppInner {
-            state: Rc::clone(&self.app_state),
-        });
-        let window = crate::Window::from_inner(WindowInner {
-            state: self.clone(),
-        });
-        let cx = WindowContext::new(&app, &window);
-        self.handler.borrow_mut()(&cx, event)
-    }
-
     pub fn close(&self) {
         if let Some(window_id) = self.window_id.take() {
-            let connection = &self.app_state.connection;
+            let connection = &self.app.inner.state.connection;
 
             if let Some(gc_id) = self.gc_id.take() {
                 let _ = connection.free_gc(gc_id);
@@ -133,10 +122,14 @@ impl WindowState {
 
 #[derive(Clone)]
 pub struct WindowInner {
-    state: Rc<WindowState>,
+    pub(crate) state: Rc<WindowState>,
 }
 
 impl WindowInner {
+    pub fn from_state(state: Rc<WindowState>) -> WindowInner {
+        WindowInner { state }
+    }
+
     pub fn open<H>(options: &WindowOptions, app: &AppHandle, handler: H) -> Result<WindowInner>
     where
         H: FnMut(&WindowContext, Event) -> Response + 'static,
@@ -241,7 +234,7 @@ impl WindowInner {
             shm_state: RefCell::new(shm_state),
             present_state: RefCell::new(present_state),
             expose_rects: RefCell::new(Vec::new()),
-            app_state: Rc::clone(&app_state),
+            app: AppHandle::from_inner(AppInner::from_state(Rc::clone(&app_state))),
             handler: RefCell::new(Box::new(handler)),
         });
 
@@ -252,15 +245,17 @@ impl WindowInner {
 
     pub fn show(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            let _ = self.state.app_state.connection.map_window(window_id);
-            let _ = self.state.app_state.connection.flush();
+            let connection = &self.state.app.inner.state.connection;
+            let _ = connection.map_window(window_id);
+            let _ = connection.flush();
         }
     }
 
     pub fn hide(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            let _ = self.state.app_state.connection.unmap_window(window_id);
-            let _ = self.state.app_state.connection.flush();
+            let connection = &self.state.app.inner.state.connection;
+            let _ = connection.unmap_window(window_id);
+            let _ = connection.flush();
         }
     }
 
@@ -269,15 +264,16 @@ impl WindowInner {
     }
 
     fn size_inner(&self) -> Result<Size> {
+        let app_state = &self.state.app.inner.state;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
-        let geom = self.state.app_state.connection.get_geometry(window_id)?.reply()?;
+        let geom = app_state.connection.get_geometry(window_id)?.reply()?;
         let size_physical = Size::new(geom.width as f64, geom.height as f64);
 
-        Ok(size_physical.scale(self.state.app_state.scale.recip()))
+        Ok(size_physical.scale(app_state.scale.recip()))
     }
 
     pub fn scale(&self) -> f64 {
-        self.state.app_state.scale
+        self.state.app.inner.state.scale
     }
 
     pub fn present(&self, bitmap: Bitmap) {
@@ -289,14 +285,15 @@ impl WindowInner {
     }
 
     fn present_inner(&self, bitmap: Bitmap, rects: Option<&[Rect]>) -> Result<()> {
-        let connection = &self.state.app_state.connection;
+        let app_state = &self.state.app.inner.state;
+        let connection = &app_state.connection;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
         let gc_id = self.state.gc_id.get().ok_or(Error::WindowClosed)?;
 
         if let Some(rects) = rects {
             let mut x_rects = Vec::with_capacity(rects.len());
             for rect in rects {
-                let rect_physical = rect.scale(self.state.app_state.scale);
+                let rect_physical = rect.scale(app_state.scale);
 
                 x_rects.push(Rectangle {
                     x: rect_physical.x.round() as i16,
@@ -373,8 +370,9 @@ impl WindowInner {
     }
 
     fn set_cursor_inner(&self, cursor: Cursor) -> Result<()> {
-        let connection = &self.state.app_state.connection;
-        let cursor_cache = &self.state.app_state.cursor_cache;
+        let app_state = &self.state.app.inner.state;
+        let connection = &app_state.connection;
+        let cursor_cache = &app_state.cursor_cache;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
 
         let cursor_id = if let Some(cursor_id) = cursor_cache.borrow_mut().get(&cursor) {
@@ -383,7 +381,7 @@ impl WindowInner {
             if cursor == Cursor::None {
                 let cursor_id = connection.generate_id()?;
                 let pixmap_id = connection.generate_id()?;
-                let root = connection.setup().roots[self.state.app_state.screen_index].root;
+                let root = connection.setup().roots[app_state.screen_index].root;
                 connection.create_pixmap(1, pixmap_id, root, 1, 1)?;
                 connection
                     .create_cursor(cursor_id, pixmap_id, pixmap_id, 0, 0, 0, 0, 0, 0, 0, 0)?;
@@ -404,7 +402,7 @@ impl WindowInner {
                     Cursor::Wait => "watch",
                     Cursor::None => unreachable!(),
                 };
-                self.state.app_state.cursor_handle.load_cursor(connection, cursor_name)?
+                app_state.cursor_handle.load_cursor(connection, cursor_name)?
             }
         };
 
@@ -412,16 +410,17 @@ impl WindowInner {
             window_id,
             &ChangeWindowAttributesAux::new().cursor(cursor_id),
         )?;
-        self.state.app_state.connection.flush()?;
+        connection.flush()?;
 
         Ok(())
     }
 
     pub fn set_mouse_position(&self, position: Point) {
         if let Some(window_id) = self.state.window_id.get() {
-            let position_physical = position.scale(self.state.app_state.scale);
+            let app_state = &self.state.app.inner.state;
+            let position_physical = position.scale(app_state.scale);
 
-            let _ = self.state.app_state.connection.warp_pointer(
+            let _ = app_state.connection.warp_pointer(
                 x11rb::NONE,
                 window_id,
                 0,
@@ -431,18 +430,18 @@ impl WindowInner {
                 position_physical.x.round() as i16,
                 position_physical.y.round() as i16,
             );
-            let _ = self.state.app_state.connection.flush();
+            let _ = app_state.connection.flush();
         }
     }
 
     pub fn close(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            self.state.app_state.windows.borrow_mut().remove(&window_id);
+            self.state.app.inner.state.windows.borrow_mut().remove(&window_id);
         }
 
         self.state.close();
 
-        let _ = self.state.app_state.connection.flush();
+        let _ = self.state.app.inner.state.connection.flush();
     }
 
     pub fn as_raw(&self) -> Result<RawWindow> {
