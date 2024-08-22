@@ -69,21 +69,18 @@ extern "C" fn release(info: *const c_void) {
 
 extern "C" fn perform(info: *const c_void) {
     let state = unsafe { &*(info as *mut DisplayState) };
+    let app_state = &state.app.inner.state;
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let windows: Vec<*const View> = state.app_state.windows.borrow().keys().copied().collect();
+        let windows: Vec<*const View> = app_state.windows.borrow().keys().copied().collect();
         for ptr in windows {
-            let window_state = state.app_state.windows.borrow().get(&ptr).cloned();
+            let window_state = app_state.windows.borrow().get(&ptr).cloned();
             if let Some(window_state) = window_state {
                 if let Some(view) = window_state.view() {
                     let display = display_from_view(&*view);
                     if display == Some(state.display_id) {
-                        let app = AppHandle::from_inner(AppInner {
-                            state: Rc::clone(&state.app_state),
-                        });
                         let window = Window::from_inner(WindowInner::from_state(window_state));
-                        let cx = WindowContext::new(&app, &window);
-
+                        let cx = WindowContext::new(&state.app, &window);
                         window.inner.state.handle_event(&cx, Event::Frame);
                     }
                 }
@@ -92,13 +89,13 @@ extern "C" fn perform(info: *const c_void) {
     }));
 
     if let Err(panic) = result {
-        state.app_state.propagate_panic(panic);
+        app_state.propagate_panic(panic);
     }
 }
 
 struct DisplayState {
     display_id: CGDirectDisplayID,
-    app_state: Rc<AppState>,
+    app: AppHandle,
 }
 
 struct Display {
@@ -110,7 +107,7 @@ impl Display {
     pub fn new(app_state: &Rc<AppState>, display_id: CGDirectDisplayID) -> Display {
         let state = Rc::new(DisplayState {
             display_id,
-            app_state: Rc::clone(app_state),
+            app: AppHandle::from_inner(AppInner::from_state(Rc::clone(app_state))),
         });
 
         let mut context = CFRunLoopSourceContext {

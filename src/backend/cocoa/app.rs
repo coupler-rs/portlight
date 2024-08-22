@@ -104,6 +104,10 @@ pub struct AppInner {
 }
 
 impl AppInner {
+    pub fn from_state(state: Rc<AppState>) -> AppInner {
+        AppInner { state }
+    }
+
     pub fn new(options: &AppOptions) -> Result<AppInner> {
         autoreleasepool(|_| {
             let mtm = MainThreadMarker::new().expect("App must be created on the main thread");
