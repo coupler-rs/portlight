@@ -19,7 +19,6 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString};
 
-use super::app::{AppInner, AppState};
 use super::surface::Surface;
 use super::OsError;
 use crate::{
@@ -180,7 +179,7 @@ impl View {
         let result = panic::catch_unwind(AssertUnwindSafe(f));
 
         if let Err(panic) = result {
-            self.state().app_state.propagate_panic(panic);
+            self.state().app.inner.state.propagate_panic(panic);
         }
     }
 
@@ -189,11 +188,8 @@ impl View {
         let state = Rc::clone(&state_rc);
         let _ = Rc::into_raw(state_rc);
 
-        let app = AppHandle::from_inner(AppInner {
-            state: Rc::clone(&state.app_state),
-        });
         let window = Window::from_inner(WindowInner { state });
-        let cx = WindowContext::new(&app, &window);
+        let cx = WindowContext::new(&window.inner.state.app, &window);
 
         window.inner.state.handle_event(&cx, event)
     }
@@ -371,7 +367,7 @@ pub struct WindowState {
     window: RefCell<Option<Id<NSWindow>>>,
     surface: RefCell<Option<Surface>>,
     cursor: Cell<Cursor>,
-    app_state: Rc<AppState>,
+    app: AppHandle,
     handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
 }
 
@@ -420,7 +416,7 @@ impl WindowState {
             Cursor::SizeNesw => try_get_cursor(sel!(_windowResizeNorthEastSouthWestCursor)),
             Cursor::SizeNwse => try_get_cursor(sel!(_windowResizeNorthWestSouthEastCursor)),
             Cursor::Wait => try_get_cursor(sel!(_waitCursor)),
-            Cursor::None => self.app_state.empty_cursor.clone(),
+            Cursor::None => self.app.inner.state.empty_cursor.clone(),
         };
 
         unsafe {
@@ -481,7 +477,7 @@ impl WindowInner {
                 window: RefCell::new(None),
                 surface: RefCell::new(None),
                 cursor: Cell::new(Cursor::Arrow),
-                app_state: Rc::clone(app_state),
+                app: app.clone(),
                 handler: RefCell::new(Box::new(handler)),
             });
 
@@ -614,10 +610,12 @@ impl WindowInner {
 
     pub fn scale(&self) -> f64 {
         autoreleasepool(|_| {
+            let mtm = self.state.app.inner.state.mtm;
+
             if let Some(view) = self.state.view() {
                 if let Some(window) = view.window() {
                     return window.backingScaleFactor();
-                } else if let Some(screen) = NSScreen::screens(self.state.app_state.mtm).get(0) {
+                } else if let Some(screen) = NSScreen::screens(mtm).get(0) {
                     return screen.backingScaleFactor();
                 }
             }
@@ -664,7 +662,7 @@ impl WindowInner {
     pub fn close(&self) {
         autoreleasepool(|_| {
             if let Some(view) = self.state.view.borrow().as_ref() {
-                self.state.app_state.windows.borrow_mut().remove(&Id::as_ptr(view));
+                self.state.app.inner.state.windows.borrow_mut().remove(&Id::as_ptr(view));
             }
 
             self.state.close();
