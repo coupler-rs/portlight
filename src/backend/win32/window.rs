@@ -299,6 +299,7 @@ pub struct WindowState {
     mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
     app: AppHandle,
+    #[allow(clippy::type_complexity)]
     handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
 }
 

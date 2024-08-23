@@ -231,6 +231,7 @@ impl AppInner {
                 let mut msg: MSG = mem::zeroed();
 
                 let result = GetMessageW(&mut msg, HWND(0), 0, 0);
+                #[allow(clippy::comparison_chain)]
                 if result.0 < 0 {
                     break Err(windows::core::Error::from_win32().into());
                 } else if result.0 == 0 {

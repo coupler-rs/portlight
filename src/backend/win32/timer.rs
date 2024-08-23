@@ -11,6 +11,7 @@ use crate::{AppHandle, Timer, TimerContext};
 struct TimerState {
     timer_id: Cell<Option<usize>>,
     app_state: Rc<AppState>,
+    #[allow(clippy::type_complexity)]
     handler: RefCell<Box<dyn FnMut(&TimerContext)>>,
 }
 
@@ -67,7 +68,7 @@ impl Timers {
         let timer_state = app.inner.state.timers.timers.borrow().get(&timer_id).cloned();
         if let Some(timer_state) = timer_state {
             let timer = Timer::from_inner(TimerInner { state: timer_state });
-            let cx = TimerContext::new(&app, &timer);
+            let cx = TimerContext::new(app, &timer);
             timer.inner.state.handler.borrow_mut()(&cx);
         }
     }

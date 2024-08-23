@@ -103,7 +103,7 @@ impl VsyncThreads {
                 let window_state = app.inner.state.windows.borrow().get(&hwnd).cloned();
                 if let Some(window_state) = window_state {
                     let window = Window::from_inner(WindowInner::from_state(window_state));
-                    let cx = WindowContext::new(&app, &window);
+                    let cx = WindowContext::new(app, &window);
                     window.inner.state.handle_event(&cx, Event::Frame);
                 }
             }
@@ -115,7 +115,7 @@ impl VsyncThreads {
     }
 
     pub fn join_all(&self) {
-        for (_, thread) in &*self.threads.borrow() {
+        for thread in self.threads.borrow().values() {
             thread.state.halt.store(true, Ordering::Relaxed);
         }
 
