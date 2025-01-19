@@ -1,12 +1,14 @@
-use portlight::{App, AppMode, AppOptions, Bitmap, Event, Point, Response, Size, WindowOptions};
+use portlight::{
+    Bitmap, Event, EventLoop, EventLoopMode, EventLoopOptions, Point, Response, Size, WindowOptions,
+};
 
 fn main() {
-    let parent_app = App::new().unwrap();
+    let parent_event_loop = EventLoop::new().unwrap();
 
     let parent_window = WindowOptions::new()
         .title("parent window")
         .size(Size::new(512.0, 512.0))
-        .open(parent_app.handle(), {
+        .open(parent_event_loop.handle(), {
             let mut framebuffer = Vec::new();
             move |cx, event| {
                 match event {
@@ -19,7 +21,7 @@ fn main() {
                         cx.window().present(Bitmap::new(&framebuffer, width, height));
                     }
                     Event::Close => {
-                        cx.app().exit();
+                        cx.event_loop().exit();
                     }
                     _ => {}
                 }
@@ -29,7 +31,7 @@ fn main() {
         })
         .unwrap();
 
-    let child_app = AppOptions::new().mode(AppMode::Guest).build().unwrap();
+    let child_event_loop = EventLoopOptions::new().mode(EventLoopMode::Guest).build().unwrap();
 
     let mut child_window_opts = WindowOptions::new();
     unsafe {
@@ -38,7 +40,7 @@ fn main() {
     let child_window = child_window_opts
         .position(Point::new(128.0, 128.0))
         .size(Size::new(256.0, 256.0))
-        .open(child_app.handle(), {
+        .open(child_event_loop.handle(), {
             let mut framebuffer = Vec::new();
             move |cx, event| {
                 match event {
@@ -61,7 +63,7 @@ fn main() {
     parent_window.show();
     child_window.show();
 
-    parent_app.run().unwrap();
+    parent_event_loop.run().unwrap();
 
     child_window.close();
     parent_window.close();

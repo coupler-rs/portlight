@@ -5,12 +5,12 @@ use std::time::Duration;
 
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
-use super::app::AppState;
-use crate::{AppHandle, Timer, TimerContext};
+use super::event_loop::EventLoopState;
+use crate::{EventLoopHandle, Timer, TimerContext};
 
 struct TimerState {
     timer_id: Cell<Option<usize>>,
-    app_state: Rc<AppState>,
+    event_loop_state: Rc<EventLoopState>,
     #[allow(clippy::type_complexity)]
     handler: RefCell<Box<dyn FnMut(&TimerContext)>>,
 }
@@ -18,7 +18,7 @@ struct TimerState {
 impl TimerState {
     fn cancel(&self) {
         if let Some(timer_id) = self.timer_id.take() {
-            let _ = unsafe { KillTimer(self.app_state.message_hwnd, timer_id) };
+            let _ = unsafe { KillTimer(self.event_loop_state.message_hwnd, timer_id) };
         }
     }
 }
@@ -38,7 +38,7 @@ impl Timers {
 
     pub fn set_timer<H>(
         &self,
-        app_state: &Rc<AppState>,
+        event_loop_state: &Rc<EventLoopState>,
         duration: Duration,
         handler: H,
     ) -> TimerInner
@@ -50,7 +50,7 @@ impl Timers {
 
         let state = Rc::new(TimerState {
             timer_id: Cell::new(Some(timer_id)),
-            app_state: Rc::clone(app_state),
+            event_loop_state: Rc::clone(event_loop_state),
             handler: RefCell::new(Box::new(handler)),
         });
 
@@ -58,17 +58,17 @@ impl Timers {
 
         unsafe {
             let millis = duration.as_millis() as u32;
-            SetTimer(app_state.message_hwnd, timer_id, millis, None);
+            SetTimer(event_loop_state.message_hwnd, timer_id, millis, None);
         }
 
         TimerInner { state }
     }
 
-    pub fn handle_timer(&self, app: &AppHandle, timer_id: usize) {
-        let timer_state = app.inner.state.timers.timers.borrow().get(&timer_id).cloned();
+    pub fn handle_timer(&self, event_loop: &EventLoopHandle, timer_id: usize) {
+        let timer_state = event_loop.inner.state.timers.timers.borrow().get(&timer_id).cloned();
         if let Some(timer_state) = timer_state {
             let timer = Timer::from_inner(TimerInner { state: timer_state });
-            let cx = TimerContext::new(app, &timer);
+            let cx = TimerContext::new(event_loop, &timer);
             timer.inner.state.handler.borrow_mut()(&cx);
         }
     }
@@ -88,7 +88,7 @@ pub struct TimerInner {
 impl TimerInner {
     pub fn cancel(&self) {
         if let Some(timer_id) = self.state.timer_id.get() {
-            self.state.app_state.timers.timers.borrow_mut().remove(&timer_id);
+            self.state.event_loop_state.timers.timers.borrow_mut().remove(&timer_id);
         }
 
         self.state.cancel();

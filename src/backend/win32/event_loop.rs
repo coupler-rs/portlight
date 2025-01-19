@@ -21,7 +21,7 @@ use super::timer::{TimerInner, Timers};
 use super::vsync::VsyncThreads;
 use super::window::{self, WindowState};
 use super::{class_name, hinstance, to_wstring, WM_USER_VBLANK};
-use crate::{AppHandle, AppMode, AppOptions, Error, Result, TimerContext};
+use crate::{Error, EventLoopHandle, EventLoopMode, EventLoopOptions, Result, TimerContext};
 
 fn register_message_class() -> Result<PCWSTR> {
     let class_name = to_wstring(&class_name("message-"));
@@ -57,37 +57,41 @@ pub unsafe extern "system" fn message_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let app_state_ptr = GetWindowLongPtrW(hwnd, msg::GWLP_USERDATA) as *mut AppState;
-    if app_state_ptr.is_null() {
+    let event_loop_state_ptr = GetWindowLongPtrW(hwnd, msg::GWLP_USERDATA) as *mut EventLoopState;
+    if event_loop_state_ptr.is_null() {
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     }
 
-    let app_state_rc = Rc::from_raw(app_state_ptr);
-    let app_state = Rc::clone(&app_state_rc);
-    let _ = Rc::into_raw(app_state_rc);
+    let event_loop_state_rc = Rc::from_raw(event_loop_state_ptr);
+    let event_loop_state = Rc::clone(&event_loop_state_rc);
+    let _ = Rc::into_raw(event_loop_state_rc);
 
-    let app = AppHandle::from_inner(AppInner::from_state(app_state));
+    let event_loop = EventLoopHandle::from_inner(EventLoopInner::from_state(event_loop_state));
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| match msg {
         msg::WM_TIMER => {
-            app.inner.state.timers.handle_timer(&app, wparam.0);
+            event_loop.inner.state.timers.handle_timer(&event_loop, wparam.0);
         }
         WM_USER_VBLANK => {
-            app.inner.state.vsync_threads.handle_vblank(&app, HMONITOR(lparam.0));
+            event_loop
+                .inner
+                .state
+                .vsync_threads
+                .handle_vblank(&event_loop, HMONITOR(lparam.0));
         }
         msg::WM_DESTROY => {
             SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, 0);
-            drop(Rc::from_raw(app_state_ptr));
+            drop(Rc::from_raw(event_loop_state_ptr));
         }
         _ => {}
     }));
 
     if let Err(panic) = result {
-        app.inner.state.propagate_panic(panic);
+        event_loop.inner.state.propagate_panic(panic);
     }
 
-    // If a panic occurs while dropping the Rc<AppState>, the only thing left to do is abort.
-    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(app))) {
+    // If a panic occurs while dropping the Rc<EventLoopState>, the only thing left to do is abort.
+    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(event_loop))) {
         std::process::abort();
     }
 
@@ -116,7 +120,7 @@ impl<'a> Drop for RunGuard<'a> {
     }
 }
 
-pub struct AppState {
+pub struct EventLoopState {
     pub open: Cell<bool>,
     pub running: Cell<bool>,
     pub panic: Cell<Option<Box<dyn Any + Send>>>,
@@ -129,7 +133,7 @@ pub struct AppState {
     pub windows: RefCell<HashMap<isize, Rc<WindowState>>>,
 }
 
-impl AppState {
+impl EventLoopState {
     pub(crate) fn propagate_panic(&self, panic: Box<dyn Any + Send + 'static>) {
         // If we own the event loop, exit and propagate the panic upwards. Otherwise, just abort.
         if self.running.get() {
@@ -142,16 +146,16 @@ impl AppState {
 }
 
 #[derive(Clone)]
-pub struct AppInner {
-    pub(super) state: Rc<AppState>,
+pub struct EventLoopInner {
+    pub(super) state: Rc<EventLoopState>,
 }
 
-impl AppInner {
-    fn from_state(state: Rc<AppState>) -> AppInner {
-        AppInner { state }
+impl EventLoopInner {
+    fn from_state(state: Rc<EventLoopState>) -> EventLoopInner {
+        EventLoopInner { state }
     }
 
-    pub fn new(options: &AppOptions) -> Result<AppInner> {
+    pub fn new(options: &EventLoopOptions) -> Result<EventLoopInner> {
         let message_class = register_message_class()?;
 
         let message_hwnd = unsafe {
@@ -177,7 +181,7 @@ impl AppInner {
         let window_class = window::register_class()?;
 
         let dpi = DpiFns::load();
-        if options.mode == AppMode::Owner {
+        if options.mode == EventLoopMode::Owner {
             dpi.set_dpi_aware();
         }
 
@@ -185,7 +189,7 @@ impl AppInner {
 
         let vsync_threads = VsyncThreads::new();
 
-        let state = Rc::new(AppState {
+        let state = Rc::new(EventLoopState {
             open: Cell::new(true),
             running: Cell::new(false),
             panic: Cell::new(None),
@@ -205,7 +209,7 @@ impl AppInner {
 
         state.vsync_threads.init(&state);
 
-        Ok(AppInner { state })
+        Ok(EventLoopInner { state })
     }
 
     pub fn set_timer<H>(&self, duration: Duration, handler: H) -> Result<TimerInner>
@@ -213,7 +217,7 @@ impl AppInner {
         H: FnMut(&TimerContext) + 'static,
     {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         Ok(self.state.timers.set_timer(&self.state, duration, handler))
@@ -221,7 +225,7 @@ impl AppInner {
 
     pub fn run(&self) -> Result<()> {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         let _run_guard = RunGuard::new(&self.state.running)?;
@@ -258,7 +262,7 @@ impl AppInner {
 
     pub fn poll(&self) -> Result<()> {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         let _run_guard = RunGuard::new(&self.state.running)?;
