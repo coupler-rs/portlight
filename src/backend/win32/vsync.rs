@@ -11,10 +11,10 @@ use windows::Win32::Graphics::Dxgi::{
 use windows::Win32::Graphics::Gdi::{MonitorFromWindow, HMONITOR, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
-use super::app::AppState;
+use super::event_loop::EventLoopState;
 use super::window::WindowInner;
 use super::WM_USER_VBLANK;
-use crate::{AppHandle, Event, Window, WindowContext};
+use crate::{Event, EventLoopHandle, Window, WindowContext};
 
 struct ThreadState {
     pending: AtomicBool,
@@ -73,7 +73,7 @@ impl VsyncThreads {
         }
     }
 
-    pub fn init(&self, app_state: &AppState) {
+    pub fn init(&self, event_loop_state: &EventLoopState) {
         let factory = unsafe { CreateDXGIFactory::<IDXGIFactory>() }.unwrap();
 
         let mut i = 0;
@@ -89,21 +89,21 @@ impl VsyncThreads {
                     output.GetDesc(&mut desc).unwrap();
                 }
 
-                let thread = Thread::new(app_state.message_hwnd, output, desc.Monitor);
+                let thread = Thread::new(event_loop_state.message_hwnd, output, desc.Monitor);
                 self.threads.borrow_mut().insert(desc.Monitor.0, thread);
             }
         }
     }
 
-    pub fn handle_vblank(&self, app: &AppHandle, monitor: HMONITOR) {
-        let windows: Vec<isize> = app.inner.state.windows.borrow().keys().copied().collect();
+    pub fn handle_vblank(&self, event_loop: &EventLoopHandle, monitor: HMONITOR) {
+        let windows: Vec<isize> = event_loop.inner.state.windows.borrow().keys().copied().collect();
         for hwnd in windows {
             let window_monitor = unsafe { MonitorFromWindow(HWND(hwnd), MONITOR_DEFAULTTONEAREST) };
             if window_monitor == monitor {
-                let window_state = app.inner.state.windows.borrow().get(&hwnd).cloned();
+                let window_state = event_loop.inner.state.windows.borrow().get(&hwnd).cloned();
                 if let Some(window_state) = window_state {
                     let window = Window::from_inner(WindowInner::from_state(window_state));
-                    let cx = WindowContext::new(app, &window);
+                    let cx = WindowContext::new(event_loop, &window);
                     window.inner.state.handle_event(&cx, Event::Frame);
                 }
             }

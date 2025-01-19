@@ -22,8 +22,8 @@ use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString};
 use super::surface::Surface;
 use super::OsError;
 use crate::{
-    AppHandle, Bitmap, Cursor, Error, Event, MouseButton, Point, RawWindow, Rect, Response, Result,
-    Size, Window, WindowContext, WindowOptions,
+    Bitmap, Cursor, Error, Event, EventLoopHandle, MouseButton, Point, RawWindow, Rect, Response,
+    Result, Size, Window, WindowContext, WindowOptions,
 };
 
 fn class_name() -> String {
@@ -179,7 +179,7 @@ impl View {
         let result = panic::catch_unwind(AssertUnwindSafe(f));
 
         if let Err(panic) = result {
-            self.state().app.inner.state.propagate_panic(panic);
+            self.state().event_loop.inner.state.propagate_panic(panic);
         }
     }
 
@@ -189,7 +189,7 @@ impl View {
         let _ = Rc::into_raw(state_rc);
 
         let window = Window::from_inner(WindowInner { state });
-        let cx = WindowContext::new(&window.inner.state.app, &window);
+        let cx = WindowContext::new(&window.inner.state.event_loop, &window);
 
         window.inner.state.handle_event(&cx, event)
     }
@@ -367,7 +367,7 @@ pub struct WindowState {
     window: RefCell<Option<Id<NSWindow>>>,
     surface: RefCell<Option<Surface>>,
     cursor: Cell<Cursor>,
-    app: AppHandle,
+    event_loop: EventLoopHandle,
     handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
 }
 
@@ -416,7 +416,7 @@ impl WindowState {
             Cursor::SizeNesw => try_get_cursor(sel!(_windowResizeNorthEastSouthWestCursor)),
             Cursor::SizeNwse => try_get_cursor(sel!(_windowResizeNorthWestSouthEastCursor)),
             Cursor::Wait => try_get_cursor(sel!(_waitCursor)),
-            Cursor::None => self.app.inner.state.empty_cursor.clone(),
+            Cursor::None => self.event_loop.inner.state.empty_cursor.clone(),
         };
 
         unsafe {
@@ -445,16 +445,20 @@ impl WindowInner {
         WindowInner { state }
     }
 
-    pub fn open<H>(options: &WindowOptions, app: &AppHandle, handler: H) -> Result<WindowInner>
+    pub fn open<H>(
+        options: &WindowOptions,
+        event_loop: &EventLoopHandle,
+        handler: H,
+    ) -> Result<WindowInner>
     where
         H: FnMut(&WindowContext, Event) -> Response + 'static,
     {
         autoreleasepool(|_| {
-            if !app.inner.state.open.get() {
-                return Err(Error::AppDropped);
+            if !event_loop.inner.state.open.get() {
+                return Err(Error::EventLoopDropped);
             }
 
-            let app_state = &app.inner.state;
+            let event_loop_state = &event_loop.inner.state;
 
             let parent_view = if let Some(parent) = options.parent {
                 if let RawWindow::Cocoa(parent_view) = parent {
@@ -477,11 +481,11 @@ impl WindowInner {
                 window: RefCell::new(None),
                 surface: RefCell::new(None),
                 cursor: Cell::new(Cursor::Arrow),
-                app: app.clone(),
+                event_loop: event_loop.clone(),
                 handler: RefCell::new(Box::new(handler)),
             });
 
-            let view: Allocated<View> = unsafe { msg_send_id![app_state.class, alloc] };
+            let view: Allocated<View> = unsafe { msg_send_id![event_loop_state.class, alloc] };
             let view: Id<View> = unsafe { msg_send_id![view, initWithFrame: frame] };
             view.state_ivar().set(Rc::into_raw(Rc::clone(&state)) as *mut c_void);
 
@@ -524,7 +528,7 @@ impl WindowInner {
 
                 let window = unsafe {
                     NSWindow::initWithContentRect_styleMask_backing_defer(
-                        app_state.mtm.alloc::<NSWindow>(),
+                        event_loop_state.mtm.alloc::<NSWindow>(),
                         content_rect,
                         style_mask,
                         NSBackingStoreType::NSBackingStoreBuffered,
@@ -548,7 +552,10 @@ impl WindowInner {
                 state.window.replace(Some(window));
             }
 
-            app_state.windows.borrow_mut().insert(Id::as_ptr(&view), Rc::clone(&state));
+            event_loop_state
+                .windows
+                .borrow_mut()
+                .insert(Id::as_ptr(&view), Rc::clone(&state));
 
             let inner = WindowInner { state };
 
@@ -610,7 +617,7 @@ impl WindowInner {
 
     pub fn scale(&self) -> f64 {
         autoreleasepool(|_| {
-            let mtm = self.state.app.inner.state.mtm;
+            let mtm = self.state.event_loop.inner.state.mtm;
 
             if let Some(view) = self.state.view() {
                 if let Some(window) = view.window() {
@@ -662,7 +669,7 @@ impl WindowInner {
     pub fn close(&self) {
         autoreleasepool(|_| {
             if let Some(view) = self.state.view.borrow().as_ref() {
-                self.state.app.inner.state.windows.borrow_mut().remove(&Id::as_ptr(view));
+                self.state.event_loop.inner.state.windows.borrow_mut().remove(&Id::as_ptr(view));
             }
 
             self.state.close();

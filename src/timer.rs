@@ -1,26 +1,26 @@
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::{backend, AppHandle};
+use crate::{backend, EventLoopHandle};
 
 pub struct TimerContext<'a> {
-    app: &'a AppHandle,
+    event_loop: &'a EventLoopHandle,
     timer: &'a Timer,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
 
 impl<'a> TimerContext<'a> {
-    pub(crate) fn new(app: &'a AppHandle, timer: &'a Timer) -> TimerContext<'a> {
+    pub(crate) fn new(event_loop: &'a EventLoopHandle, timer: &'a Timer) -> TimerContext<'a> {
         TimerContext {
-            app,
+            event_loop,
             timer,
             _marker: PhantomData,
         }
     }
 
-    pub fn app(&self) -> &AppHandle {
-        self.app
+    pub fn event_loop(&self) -> &EventLoopHandle {
+        self.event_loop
     }
 
     pub fn timer(&self) -> &Timer {

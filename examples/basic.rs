@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use portlight::{App, Bitmap, Event, Response, Size, WindowContext, WindowOptions};
+use portlight::{Bitmap, Event, EventLoop, Response, Size, WindowContext, WindowOptions};
 
 const WIDTH: usize = 512;
 const HEIGHT: usize = 512;
@@ -61,7 +61,7 @@ impl State {
                 return Response::Capture;
             }
             Event::Close => {
-                cx.app().exit();
+                cx.event_loop().exit();
             }
         }
 
@@ -70,7 +70,7 @@ impl State {
 }
 
 fn main() {
-    let app = App::new().unwrap();
+    let event_loop = EventLoop::new().unwrap();
 
     let mut state = State {
         framebuffer: Vec::new(),
@@ -81,10 +81,13 @@ fn main() {
     let window = WindowOptions::new()
         .title("window")
         .size(Size::new(512.0, 512.0))
-        .open(app.handle(), move |cx, event| state.handle_event(cx, event))
+        .open(event_loop.handle(), move |cx, event| {
+            state.handle_event(cx, event)
+        })
         .unwrap();
 
-    app.handle()
+    event_loop
+        .handle()
         .set_timer(Duration::from_millis(1000), |_| {
             println!("timer");
         })
@@ -92,5 +95,5 @@ fn main() {
 
     window.show();
 
-    app.run().unwrap();
+    event_loop.run().unwrap();
 }

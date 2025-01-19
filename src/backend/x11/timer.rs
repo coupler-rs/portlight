@@ -4,15 +4,15 @@ use std::collections::{BinaryHeap, HashMap};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use super::app::{AppInner, AppState};
-use crate::{AppHandle, Timer, TimerContext};
+use super::event_loop::{EventLoopInner, EventLoopState};
+use crate::{EventLoopHandle, Timer, TimerContext};
 
 pub type TimerId = usize;
 
 struct TimerState {
     timer_id: TimerId,
     duration: Duration,
-    app: AppHandle,
+    event_loop: EventLoopHandle,
     handler: RefCell<Box<dyn FnMut(&TimerContext)>>,
 }
 
@@ -63,7 +63,7 @@ impl Timers {
 
     pub fn set_timer<H>(
         &self,
-        app_state: &Rc<AppState>,
+        event_loop_state: &Rc<EventLoopState>,
         duration: Duration,
         handler: H,
     ) -> TimerInner
@@ -78,7 +78,9 @@ impl Timers {
         let state = Rc::new(TimerState {
             timer_id,
             duration,
-            app: AppHandle::from_inner(AppInner::from_state(Rc::clone(app_state))),
+            event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
+                event_loop_state,
+            ))),
             handler: RefCell::new(Box::new(handler)),
         });
 
@@ -103,7 +105,7 @@ impl Timers {
             let timer_state = self.timers.borrow().get(&next.timer_id).cloned();
             if let Some(timer_state) = timer_state {
                 let timer = Timer::from_inner(TimerInner { state: timer_state });
-                let cx = TimerContext::new(&timer.inner.state.app, &timer);
+                let cx = TimerContext::new(&timer.inner.state.event_loop, &timer);
                 timer.inner.state.handler.borrow_mut()(&cx);
 
                 // If we fall behind by more than one timer interval, reset the timer's phase
@@ -130,7 +132,7 @@ pub struct TimerInner {
 
 impl TimerInner {
     pub fn cancel(&self) {
-        let timers = &self.state.app.inner.state.timers;
+        let timers = &self.state.event_loop.inner.state.timers;
         timers.timers.borrow_mut().remove(&self.state.timer_id);
     }
 }

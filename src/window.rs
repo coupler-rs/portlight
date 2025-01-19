@@ -2,7 +2,7 @@ use std::ffi::{c_ulong, c_void};
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::{backend, AppHandle, Result};
+use crate::{backend, EventLoopHandle, Result};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point {
@@ -200,34 +200,34 @@ impl WindowOptions {
         self
     }
 
-    pub fn open<H>(&self, app: &AppHandle, handler: H) -> Result<Window>
+    pub fn open<H>(&self, event_loop: &EventLoopHandle, handler: H) -> Result<Window>
     where
         H: FnMut(&WindowContext, Event) -> Response + 'static,
     {
         Ok(Window::from_inner(backend::WindowInner::open(
-            self, app, handler,
+            self, event_loop, handler,
         )?))
     }
 }
 
 pub struct WindowContext<'a> {
-    app: &'a AppHandle,
+    event_loop: &'a EventLoopHandle,
     window: &'a Window,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
 
 impl<'a> WindowContext<'a> {
-    pub(crate) fn new(app: &'a AppHandle, window: &'a Window) -> WindowContext<'a> {
+    pub(crate) fn new(event_loop: &'a EventLoopHandle, window: &'a Window) -> WindowContext<'a> {
         WindowContext {
-            app,
+            event_loop,
             window,
             _marker: PhantomData,
         }
     }
 
-    pub fn app(&self) -> &AppHandle {
-        self.app
+    pub fn event_loop(&self) -> &EventLoopHandle {
+        self.event_loop
     }
 
     pub fn window(&self) -> &Window {

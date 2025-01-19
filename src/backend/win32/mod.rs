@@ -6,13 +6,13 @@ use windows::Win32::Foundation::HINSTANCE;
 use windows::Win32::System::SystemServices::IMAGE_DOS_HEADER;
 use windows::Win32::UI::WindowsAndMessaging::WM_USER;
 
-mod app;
 mod dpi;
+mod event_loop;
 mod timer;
 mod vsync;
 mod window;
 
-pub use app::AppInner;
+pub use event_loop::EventLoopInner;
 pub use timer::TimerInner;
 pub use window::WindowInner;
 

@@ -19,11 +19,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ShowWindow, UnregisterClassW, CREATESTRUCTW, HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WNDCLASSW,
 };
 
-use super::app::AppState;
+use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
-    AppHandle, Bitmap, Cursor, Error, Event, MouseButton, Point, RawWindow, Rect, Response, Result,
-    Size, Window, WindowContext, WindowOptions,
+    Bitmap, Cursor, Error, Event, EventLoopHandle, MouseButton, Point, RawWindow, Rect, Response,
+    Result, Size, Window, WindowContext, WindowOptions,
 };
 
 #[allow(non_snake_case)]
@@ -94,10 +94,10 @@ pub unsafe extern "system" fn wnd_proc(
 ) -> LRESULT {
     if msg == msg::WM_NCCREATE {
         let create_struct = &*(lparam.0 as *const CREATESTRUCTW);
-        let app_state = &*(create_struct.lpCreateParams as *const AppState);
+        let event_loop_state = &*(create_struct.lpCreateParams as *const EventLoopState);
 
         #[allow(non_snake_case)]
-        if let Some(EnableNonClientDpiScaling) = app_state.dpi.EnableNonClientDpiScaling {
+        if let Some(EnableNonClientDpiScaling) = event_loop_state.dpi.EnableNonClientDpiScaling {
             EnableNonClientDpiScaling(hwnd);
         }
 
@@ -111,7 +111,7 @@ pub unsafe extern "system" fn wnd_proc(
 
     let window = Window::from_inner(WindowInner::from_state(WindowState::from_raw(state_ptr)));
     let state = &window.inner.state;
-    let cx = WindowContext::new(&state.app, &window);
+    let cx = WindowContext::new(&state.event_loop, &window);
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         match msg {
@@ -276,7 +276,7 @@ pub unsafe extern "system" fn wnd_proc(
     let return_value = match result {
         Ok(return_value) => return_value,
         Err(panic) => {
-            state.app.inner.state.propagate_panic(panic);
+            state.event_loop.inner.state.propagate_panic(panic);
             None
         }
     };
@@ -298,7 +298,7 @@ pub struct WindowState {
     mouse_down_count: Cell<isize>,
     mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
-    app: AppHandle,
+    event_loop: EventLoopHandle,
     #[allow(clippy::type_complexity)]
     handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
 }
@@ -336,7 +336,7 @@ impl WindowState {
 
     pub fn scale(&self) -> f64 {
         if let Some(hwnd) = self.hwnd.get() {
-            let dpi = unsafe { self.app.inner.state.dpi.dpi_for_window(hwnd) };
+            let dpi = unsafe { self.event_loop.inner.state.dpi.dpi_for_window(hwnd) };
 
             dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64
         } else {
@@ -369,12 +369,16 @@ impl WindowInner {
         WindowInner { state }
     }
 
-    pub fn open<H>(options: &WindowOptions, app: &AppHandle, handler: H) -> Result<WindowInner>
+    pub fn open<H>(
+        options: &WindowOptions,
+        event_loop: &EventLoopHandle,
+        handler: H,
+    ) -> Result<WindowInner>
     where
         H: FnMut(&WindowContext, Event) -> Response + 'static,
     {
-        if !app.inner.state.open.get() {
-            return Err(Error::AppDropped);
+        if !event_loop.inner.state.open.get() {
+            return Err(Error::EventLoopDropped);
         }
 
         unsafe {
@@ -403,9 +407,9 @@ impl WindowInner {
             };
 
             let dpi = if options.parent.is_some() {
-                app.inner.state.dpi.dpi_for_window(parent)
+                event_loop.inner.state.dpi.dpi_for_window(parent)
             } else {
-                app.inner.state.dpi.dpi_for_primary_monitor()
+                event_loop.inner.state.dpi.dpi_for_primary_monitor()
             };
             let scale = dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64;
 
@@ -428,7 +432,7 @@ impl WindowInner {
 
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
-                app.inner.state.window_class,
+                event_loop.inner.state.window_class,
                 PCWSTR(window_name.as_ptr()),
                 style,
                 x,
@@ -438,7 +442,7 @@ impl WindowInner {
                 parent,
                 HMENU(0),
                 hinstance(),
-                Some(Rc::as_ptr(&app.inner.state) as *const c_void),
+                Some(Rc::as_ptr(&event_loop.inner.state) as *const c_void),
             );
             if hwnd == HWND(0) {
                 return Err(windows::core::Error::from_win32().into());
@@ -449,14 +453,14 @@ impl WindowInner {
                 mouse_down_count: Cell::new(0),
                 mouse_in_window: Cell::new(false),
                 cursor: Cell::new(Cursor::Arrow),
-                app: app.clone(),
+                event_loop: event_loop.clone(),
                 handler: RefCell::new(Box::new(handler)),
             });
 
             let state_ptr = Rc::into_raw(Rc::clone(&state));
             SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, state_ptr as isize);
 
-            app.inner.state.windows.borrow_mut().insert(hwnd.0, Rc::clone(&state));
+            event_loop.inner.state.windows.borrow_mut().insert(hwnd.0, Rc::clone(&state));
 
             Ok(WindowInner { state })
         }
@@ -624,7 +628,7 @@ impl WindowInner {
 
     pub fn close(&self) {
         if let Some(hwnd) = self.state.hwnd.get() {
-            self.state.app.inner.state.windows.borrow_mut().remove(&hwnd.0);
+            self.state.event_loop.inner.state.windows.borrow_mut().remove(&hwnd.0);
         }
 
         self.state.close();
