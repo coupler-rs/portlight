@@ -5,58 +5,58 @@ use std::time::Duration;
 use crate::{backend, Result, Timer, TimerContext};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum AppMode {
+pub enum EventLoopMode {
     Owner,
     Guest,
 }
 
 #[derive(Clone, Debug)]
-pub struct AppOptions {
-    pub(crate) mode: AppMode,
+pub struct EventLoopOptions {
+    pub(crate) mode: EventLoopMode,
 }
 
-impl Default for AppOptions {
+impl Default for EventLoopOptions {
     fn default() -> Self {
-        AppOptions {
-            mode: AppMode::Owner,
+        EventLoopOptions {
+            mode: EventLoopMode::Owner,
         }
     }
 }
 
-impl AppOptions {
-    pub fn new() -> AppOptions {
+impl EventLoopOptions {
+    pub fn new() -> EventLoopOptions {
         Self::default()
     }
 
-    pub fn mode(&mut self, mode: AppMode) -> &mut Self {
+    pub fn mode(&mut self, mode: EventLoopMode) -> &mut Self {
         self.mode = mode;
         self
     }
 
-    pub fn build(&self) -> Result<App> {
-        Ok(App::from_inner(backend::AppInner::new(self)?))
+    pub fn build(&self) -> Result<EventLoop> {
+        Ok(EventLoop::from_inner(backend::EventLoopInner::new(self)?))
     }
 }
 
-pub struct App {
-    handle: AppHandle,
+pub struct EventLoop {
+    handle: EventLoopHandle,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
 
-impl App {
-    pub(crate) fn from_inner(inner: backend::AppInner) -> App {
-        App {
-            handle: AppHandle::from_inner(inner),
+impl EventLoop {
+    pub(crate) fn from_inner(inner: backend::EventLoopInner) -> EventLoop {
+        EventLoop {
+            handle: EventLoopHandle::from_inner(inner),
             _marker: PhantomData,
         }
     }
 
-    pub fn new() -> Result<App> {
-        AppOptions::default().build()
+    pub fn new() -> Result<EventLoop> {
+        EventLoopOptions::default().build()
     }
 
-    pub fn handle(&self) -> &AppHandle {
+    pub fn handle(&self) -> &EventLoopHandle {
         &self.handle
     }
 
@@ -69,15 +69,15 @@ impl App {
     }
 }
 
-impl Drop for App {
+impl Drop for EventLoop {
     fn drop(&mut self) {
         self.handle.inner.shutdown();
     }
 }
 
-impl fmt::Debug for App {
+impl fmt::Debug for EventLoop {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("App").finish_non_exhaustive()
+        fmt.debug_struct("EventLoop").finish_non_exhaustive()
     }
 }
 
@@ -85,22 +85,22 @@ impl fmt::Debug for App {
 use std::os::unix::io::{AsRawFd, RawFd};
 
 #[cfg(target_os = "linux")]
-impl AsRawFd for App {
+impl AsRawFd for EventLoop {
     fn as_raw_fd(&self) -> RawFd {
         self.handle.inner.as_raw_fd()
     }
 }
 
 #[derive(Clone)]
-pub struct AppHandle {
-    pub(crate) inner: backend::AppInner,
+pub struct EventLoopHandle {
+    pub(crate) inner: backend::EventLoopInner,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
 
-impl AppHandle {
-    pub(crate) fn from_inner(inner: backend::AppInner) -> AppHandle {
-        AppHandle {
+impl EventLoopHandle {
+    pub(crate) fn from_inner(inner: backend::EventLoopInner) -> EventLoopHandle {
+        EventLoopHandle {
             inner,
             _marker: PhantomData,
         }
@@ -118,8 +118,8 @@ impl AppHandle {
     }
 }
 
-impl fmt::Debug for AppHandle {
+impl fmt::Debug for EventLoopHandle {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("AppHandle").finish_non_exhaustive()
+        fmt.debug_struct("EventLoopHandle").finish_non_exhaustive()
     }
 }

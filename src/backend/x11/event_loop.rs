@@ -14,8 +14,8 @@ use x11rb::{cursor, protocol, resource_manager};
 use super::timer::{TimerInner, Timers};
 use super::window::{WindowInner, WindowState};
 use crate::{
-    AppOptions, Cursor, Error, Event, MouseButton, Point, Rect, Response, Result, TimerContext,
-    Window, WindowContext,
+    Cursor, Error, Event, EventLoopOptions, MouseButton, Point, Rect, Response, Result,
+    TimerContext, Window, WindowContext,
 };
 
 fn mouse_button_from_code(code: Button) -> Option<MouseButton> {
@@ -77,7 +77,7 @@ impl<'a> Drop for RunGuard<'a> {
     }
 }
 
-pub struct AppState {
+pub struct EventLoopState {
     pub open: Cell<bool>,
     pub run_state: Cell<RunState>,
     pub connection: RustConnection,
@@ -93,7 +93,7 @@ pub struct AppState {
     pub timers: Timers,
 }
 
-impl Drop for AppState {
+impl Drop for EventLoopState {
     fn drop(&mut self) {
         for (_, cursor) in self.cursor_cache.take() {
             let _ = self.connection.free_cursor(cursor);
@@ -103,16 +103,16 @@ impl Drop for AppState {
 }
 
 #[derive(Clone)]
-pub struct AppInner {
-    pub(super) state: Rc<AppState>,
+pub struct EventLoopInner {
+    pub(super) state: Rc<EventLoopState>,
 }
 
-impl AppInner {
-    pub fn from_state(state: Rc<AppState>) -> AppInner {
-        AppInner { state }
+impl EventLoopInner {
+    pub fn from_state(state: Rc<EventLoopState>) -> EventLoopInner {
+        EventLoopInner { state }
     }
 
-    pub fn new(_options: &AppOptions) -> Result<AppInner> {
+    pub fn new(_options: &EventLoopOptions) -> Result<EventLoopInner> {
         let (connection, screen_index) = x11rb::connect(None)?;
         let atoms = Atoms::new(&connection)?.reply()?;
         let shm_supported = connection.extension_information(shm::X11_EXTENSION_NAME)?.is_some();
@@ -127,7 +127,7 @@ impl AppInner {
             1.0
         };
 
-        let state = Rc::new(AppState {
+        let state = Rc::new(EventLoopState {
             open: Cell::new(true),
             run_state: Cell::new(RunState::Stopped),
             connection,
@@ -143,7 +143,7 @@ impl AppInner {
             timers: Timers::new(),
         });
 
-        let inner = AppInner { state };
+        let inner = EventLoopInner { state };
 
         Ok(inner)
     }
@@ -153,7 +153,7 @@ impl AppInner {
         H: FnMut(&TimerContext) + 'static,
     {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         Ok(self.state.timers.set_timer(&self.state, duration, handler))
@@ -161,7 +161,7 @@ impl AppInner {
 
     pub fn run(&self) -> Result<()> {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         let _run_guard = RunGuard::new(&self.state.run_state)?;
@@ -202,7 +202,7 @@ impl AppInner {
 
     pub fn poll(&self) -> Result<()> {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         if self.state.run_state.get() != RunState::Stopped {
@@ -227,7 +227,7 @@ impl AppInner {
     }
 
     fn handle_event(&self, window: &Window, event: Event) -> Response {
-        let cx = WindowContext::new(&window.inner.state.app, window);
+        let cx = WindowContext::new(&window.inner.state.event_loop, window);
         window.inner.state.handler.borrow_mut()(&cx, event)
     }
 
@@ -339,7 +339,7 @@ impl AppInner {
     }
 }
 
-impl AsRawFd for AppInner {
+impl AsRawFd for EventLoopInner {
     fn as_raw_fd(&self) -> RawFd {
         self.state.connection.stream().as_raw_fd()
     }
