@@ -14,8 +14,8 @@ use x11rb::{cursor, protocol, resource_manager};
 use super::timer::{TimerInner, Timers};
 use super::window::{WindowInner, WindowState};
 use crate::{
-    Cursor, Error, Event, EventLoopOptions, MouseButton, Point, Rect, Response, Result,
-    TimerContext, Window, WindowContext,
+    Cursor, Error, EventLoopOptions, MouseButton, Point, Rect, Response, Result, TimerContext,
+    Window, WindowContext, WindowEvent,
 };
 
 fn mouse_button_from_code(code: Button) -> Option<MouseButton> {
@@ -226,7 +226,7 @@ impl EventLoopInner {
         }
     }
 
-    fn handle_event(&self, window: &Window, event: Event) -> Response {
+    fn handle_event(&self, window: &Window, event: WindowEvent) -> Response {
         let cx = WindowContext::new(&window.inner.state.event_loop, window);
         window.inner.state.handler.borrow_mut()(&cx, event)
     }
@@ -257,7 +257,7 @@ impl EventLoopInner {
 
                         if event.count == 0 {
                             let rects = expose_rects.take();
-                            self.handle_event(&window, Event::Expose(&rects));
+                            self.handle_event(&window, WindowEvent::Expose(&rects));
                         }
                     }
                 }
@@ -266,24 +266,24 @@ impl EventLoopInner {
                         && event.data.as_data32()[0] == self.state.atoms.WM_DELETE_WINDOW
                     {
                         if let Some(window) = self.get_window(event.window) {
-                            self.handle_event(&window, Event::Close);
+                            self.handle_event(&window, WindowEvent::Close);
                         }
                     }
                 }
                 protocol::Event::EnterNotify(event) => {
                     if let Some(window) = self.get_window(event.event) {
-                        self.handle_event(&window, Event::MouseEnter);
+                        self.handle_event(&window, WindowEvent::MouseEnter);
 
                         let point = Point {
                             x: event.event_x as f64,
                             y: event.event_y as f64,
                         };
-                        self.handle_event(&window, Event::MouseMove(point));
+                        self.handle_event(&window, WindowEvent::MouseMove(point));
                     }
                 }
                 protocol::Event::LeaveNotify(event) => {
                     if let Some(window) = self.get_window(event.event) {
-                        self.handle_event(&window, Event::MouseExit);
+                        self.handle_event(&window, WindowEvent::MouseExit);
                     }
                 }
                 protocol::Event::MotionNotify(event) => {
@@ -293,28 +293,28 @@ impl EventLoopInner {
                             y: event.event_y as f64,
                         };
 
-                        self.handle_event(&window, Event::MouseMove(point));
+                        self.handle_event(&window, WindowEvent::MouseMove(point));
                     }
                 }
                 protocol::Event::ButtonPress(event) => {
                     if let Some(window) = self.get_window(event.event) {
                         if let Some(button) = mouse_button_from_code(event.detail) {
-                            self.handle_event(&window, Event::MouseDown(button));
+                            self.handle_event(&window, WindowEvent::MouseDown(button));
                         } else if let Some(delta) = scroll_delta_from_code(event.detail) {
-                            self.handle_event(&window, Event::Scroll(delta));
+                            self.handle_event(&window, WindowEvent::Scroll(delta));
                         }
                     }
                 }
                 protocol::Event::ButtonRelease(event) => {
                     if let Some(window) = self.get_window(event.event) {
                         if let Some(button) = mouse_button_from_code(event.detail) {
-                            self.handle_event(&window, Event::MouseUp(button));
+                            self.handle_event(&window, WindowEvent::MouseUp(button));
                         }
                     }
                 }
                 protocol::Event::PresentCompleteNotify(event) => {
                     if let Some(window) = self.get_window(event.window) {
-                        self.handle_event(&window, Event::Frame);
+                        self.handle_event(&window, WindowEvent::Frame);
 
                         self.state.connection.present_notify_msc(event.window, 0, 0, 1, 0)?;
                         self.state.connection.flush()?;
