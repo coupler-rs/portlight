@@ -22,8 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
-    Bitmap, Cursor, Error, Event, EventLoopHandle, MouseButton, Point, RawWindow, Rect, Response,
-    Result, Size, Window, WindowContext, WindowOptions,
+    Bitmap, Cursor, Error, EventLoopHandle, MouseButton, Point, RawWindow, Rect, Response, Result,
+    Size, Window, WindowContext, WindowEvent, WindowOptions,
 };
 
 #[allow(non_snake_case)]
@@ -158,7 +158,7 @@ pub unsafe extern "system" fn wnd_proc(
                 gdi::DeleteObject(rgn);
 
                 // Only validate the dirty region if we successfully invoked the event handler.
-                if state.handle_event(&cx, Event::Expose(&rects)).is_some() {
+                if state.handle_event(&cx, WindowEvent::Expose(&rects)).is_some() {
                     gdi::ValidateRgn(hwnd, gdi::HRGN(0));
                 }
 
@@ -167,7 +167,7 @@ pub unsafe extern "system" fn wnd_proc(
             msg::WM_MOUSEMOVE => {
                 if !state.mouse_in_window.get() {
                     state.mouse_in_window.set(true);
-                    state.handle_event(&cx, Event::MouseEnter);
+                    state.handle_event(&cx, WindowEvent::MouseEnter);
 
                     let _ = TrackMouseEvent(&mut TRACKMOUSEEVENT {
                         cbSize: mem::size_of::<TRACKMOUSEEVENT>() as u32,
@@ -183,13 +183,13 @@ pub unsafe extern "system" fn wnd_proc(
                 };
                 let point = point_physical.scale(state.scale().recip());
 
-                state.handle_event(&cx, Event::MouseMove(point));
+                state.handle_event(&cx, WindowEvent::MouseMove(point));
 
                 return Some(LRESULT(0));
             }
             WM_MOUSELEAVE => {
                 state.mouse_in_window.set(false);
-                state.handle_event(&cx, Event::MouseExit);
+                state.handle_event(&cx, WindowEvent::MouseExit);
             }
             msg::WM_LBUTTONDOWN
             | msg::WM_LBUTTONUP
@@ -216,23 +216,23 @@ pub unsafe extern "system" fn wnd_proc(
                         msg::WM_LBUTTONDOWN
                         | msg::WM_MBUTTONDOWN
                         | msg::WM_RBUTTONDOWN
-                        | msg::WM_XBUTTONDOWN => Some(Event::MouseDown(button)),
+                        | msg::WM_XBUTTONDOWN => Some(WindowEvent::MouseDown(button)),
                         msg::WM_LBUTTONUP
                         | msg::WM_MBUTTONUP
                         | msg::WM_RBUTTONUP
-                        | msg::WM_XBUTTONUP => Some(Event::MouseUp(button)),
+                        | msg::WM_XBUTTONUP => Some(WindowEvent::MouseUp(button)),
                         _ => None,
                     };
 
                     if let Some(event) = event {
                         match event {
-                            Event::MouseDown(_) => {
+                            WindowEvent::MouseDown(_) => {
                                 state.mouse_down_count.set(state.mouse_down_count.get() + 1);
                                 if state.mouse_down_count.get() == 1 {
                                     SetCapture(hwnd);
                                 }
                             }
-                            Event::MouseUp(_) => {
+                            WindowEvent::MouseUp(_) => {
                                 state.mouse_down_count.set(state.mouse_down_count.get() - 1);
                                 if state.mouse_down_count.get() == 0 {
                                     let _ = ReleaseCapture();
@@ -255,12 +255,12 @@ pub unsafe extern "system" fn wnd_proc(
                     _ => unreachable!(),
                 };
 
-                if state.handle_event(&cx, Event::Scroll(point)) == Some(Response::Capture) {
+                if state.handle_event(&cx, WindowEvent::Scroll(point)) == Some(Response::Capture) {
                     return Some(LRESULT(0));
                 }
             }
             msg::WM_CLOSE => {
-                state.handle_event(&cx, Event::Close);
+                state.handle_event(&cx, WindowEvent::Close);
                 return Some(LRESULT(0));
             }
             msg::WM_DESTROY => {
@@ -300,7 +300,7 @@ pub struct WindowState {
     cursor: Cell<Cursor>,
     event_loop: EventLoopHandle,
     #[allow(clippy::type_complexity)]
-    handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
+    handler: RefCell<Box<dyn FnMut(&WindowContext, WindowEvent) -> Response>>,
 }
 
 impl WindowState {
@@ -344,7 +344,7 @@ impl WindowState {
         }
     }
 
-    pub fn handle_event(&self, cx: &WindowContext, event: Event) -> Option<Response> {
+    pub fn handle_event(&self, cx: &WindowContext, event: WindowEvent) -> Option<Response> {
         if let Ok(mut handler) = self.handler.try_borrow_mut() {
             return Some(handler(cx, event));
         }
@@ -375,7 +375,7 @@ impl WindowInner {
         handler: H,
     ) -> Result<WindowInner>
     where
-        H: FnMut(&WindowContext, Event) -> Response + 'static,
+        H: FnMut(&WindowContext, WindowEvent) -> Response + 'static,
     {
         if !event_loop.inner.state.open.get() {
             return Err(Error::EventLoopDropped);

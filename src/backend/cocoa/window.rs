@@ -22,8 +22,8 @@ use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString};
 use super::surface::Surface;
 use super::OsError;
 use crate::{
-    Bitmap, Cursor, Error, Event, EventLoopHandle, MouseButton, Point, RawWindow, Rect, Response,
-    Result, Size, Window, WindowContext, WindowOptions,
+    Bitmap, Cursor, Error, EventLoopHandle, MouseButton, Point, RawWindow, Rect, Response, Result,
+    Size, Window, WindowContext, WindowEvent, WindowOptions,
 };
 
 fn class_name() -> String {
@@ -183,7 +183,7 @@ impl View {
         }
     }
 
-    pub fn handle_event(&self, event: Event) -> Option<Response> {
+    pub fn handle_event(&self, event: WindowEvent) -> Option<Response> {
         let state_rc = unsafe { Rc::from_raw(self.state_ivar().get() as *const WindowState) };
         let state = Rc::clone(&state_rc);
         let _ = Rc::into_raw(state_rc);
@@ -208,13 +208,13 @@ impl View {
 
     unsafe extern "C" fn mouse_entered(&self, _: Sel, _event: Option<&NSEvent>) {
         self.catch_unwind(|| {
-            self.handle_event(Event::MouseEnter);
+            self.handle_event(WindowEvent::MouseEnter);
         });
     }
 
     unsafe extern "C" fn mouse_exited(&self, _: Sel, _event: Option<&NSEvent>) {
         self.catch_unwind(|| {
-            self.handle_event(Event::MouseExit);
+            self.handle_event(WindowEvent::MouseExit);
         });
     }
 
@@ -225,7 +225,7 @@ impl View {
             };
 
             let point = self.convertPoint_fromView(event.locationInWindow(), None);
-            self.handle_event(Event::MouseMove(Point {
+            self.handle_event(WindowEvent::MouseMove(Point {
                 x: point.x,
                 y: point.y,
             }));
@@ -234,7 +234,7 @@ impl View {
 
     unsafe extern "C" fn mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
         self.catch_unwind(|| {
-            let result = self.handle_event(Event::MouseDown(MouseButton::Left));
+            let result = self.handle_event(WindowEvent::MouseDown(MouseButton::Left));
 
             if result != Some(Response::Capture) {
                 let () = msg_send![super(self, NSView::class()), mouseDown: event];
@@ -244,7 +244,7 @@ impl View {
 
     unsafe extern "C" fn mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
         self.catch_unwind(|| {
-            let result = self.handle_event(Event::MouseUp(MouseButton::Left));
+            let result = self.handle_event(WindowEvent::MouseUp(MouseButton::Left));
 
             if result != Some(Response::Capture) {
                 let () = msg_send![super(self, NSView::class()), mouseUp: event];
@@ -254,7 +254,7 @@ impl View {
 
     unsafe extern "C" fn right_mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
         self.catch_unwind(|| {
-            let result = self.handle_event(Event::MouseDown(MouseButton::Right));
+            let result = self.handle_event(WindowEvent::MouseDown(MouseButton::Right));
 
             if result != Some(Response::Capture) {
                 let () = msg_send![super(self, NSView::class()), rightMouseDown: event];
@@ -264,7 +264,7 @@ impl View {
 
     unsafe extern "C" fn right_mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
         self.catch_unwind(|| {
-            let result = self.handle_event(Event::MouseUp(MouseButton::Right));
+            let result = self.handle_event(WindowEvent::MouseUp(MouseButton::Right));
 
             if result != Some(Response::Capture) {
                 let () = msg_send![super(self, NSView::class()), rightMouseUp: event];
@@ -280,7 +280,7 @@ impl View {
 
             let button_number = event.buttonNumber();
             let result = if let Some(button) = mouse_button_from_number(button_number) {
-                self.handle_event(Event::MouseDown(button))
+                self.handle_event(WindowEvent::MouseDown(button))
             } else {
                 None
             };
@@ -299,7 +299,7 @@ impl View {
 
             let button_number = event.buttonNumber();
             let result = if let Some(button) = mouse_button_from_number(button_number) {
-                self.handle_event(Event::MouseUp(button))
+                self.handle_event(WindowEvent::MouseUp(button))
             } else {
                 None
             };
@@ -323,7 +323,7 @@ impl View {
             } else {
                 Point::new(32.0 * dx, 32.0 * dy)
             };
-            let result = self.handle_event(Event::Scroll(delta));
+            let result = self.handle_event(WindowEvent::Scroll(delta));
 
             if result != Some(Response::Capture) {
                 let () = msg_send![super(self, NSView::class()), scrollWheel: event];
@@ -339,7 +339,7 @@ impl View {
 
     unsafe extern "C" fn window_should_close(&self, _: Sel, _sender: &NSWindow) -> Bool {
         self.catch_unwind(|| {
-            self.handle_event(Event::Close);
+            self.handle_event(WindowEvent::Close);
         });
 
         Bool::NO
@@ -368,7 +368,7 @@ pub struct WindowState {
     surface: RefCell<Option<Surface>>,
     cursor: Cell<Cursor>,
     event_loop: EventLoopHandle,
-    handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
+    handler: RefCell<Box<dyn FnMut(&WindowContext, WindowEvent) -> Response>>,
 }
 
 impl WindowState {
@@ -380,7 +380,7 @@ impl WindowState {
         self.window.borrow().clone()
     }
 
-    pub fn handle_event(&self, cx: &WindowContext, event: Event) -> Option<Response> {
+    pub fn handle_event(&self, cx: &WindowContext, event: WindowEvent) -> Option<Response> {
         if let Ok(mut handler) = self.handler.try_borrow_mut() {
             return Some(handler(cx, event));
         }
@@ -451,7 +451,7 @@ impl WindowInner {
         handler: H,
     ) -> Result<WindowInner>
     where
-        H: FnMut(&WindowContext, Event) -> Response + 'static,
+        H: FnMut(&WindowContext, WindowEvent) -> Response + 'static,
     {
         autoreleasepool(|_| {
             if !event_loop.inner.state.open.get() {

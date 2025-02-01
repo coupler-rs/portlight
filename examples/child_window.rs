@@ -1,5 +1,6 @@
 use portlight::{
-    Bitmap, Event, EventLoop, EventLoopMode, EventLoopOptions, Point, Response, Size, WindowOptions,
+    Bitmap, EventLoop, EventLoopMode, EventLoopOptions, Point, Response, Size, WindowEvent,
+    WindowOptions,
 };
 
 fn main() {
@@ -12,7 +13,7 @@ fn main() {
             let mut framebuffer = Vec::new();
             move |cx, event| {
                 match event {
-                    Event::Frame => {
+                    WindowEvent::Frame => {
                         let scale = cx.window().scale();
                         let size = cx.window().size();
                         let width = (scale * size.width) as usize;
@@ -20,7 +21,7 @@ fn main() {
                         framebuffer.resize(width * height, 0xFF00FFFF);
                         cx.window().present(Bitmap::new(&framebuffer, width, height));
                     }
-                    Event::Close => {
+                    WindowEvent::Close => {
                         cx.event_loop().exit();
                     }
                     _ => {}
@@ -44,7 +45,7 @@ fn main() {
             let mut framebuffer = Vec::new();
             move |cx, event| {
                 match event {
-                    Event::Frame => {
+                    WindowEvent::Frame => {
                         let scale = cx.window().scale();
                         let size = cx.window().size();
                         let width = (scale * size.width) as usize;
