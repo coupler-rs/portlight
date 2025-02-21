@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use crate::{backend, Result, Timer, TimerContext};
+use crate::{backend, Result, Task, TaskHandle, Timer, TimerContext};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum EventLoopMode {
@@ -58,6 +58,13 @@ impl EventLoop {
 
     pub fn handle(&self) -> &EventLoopHandle {
         &self.handle
+    }
+
+    pub fn spawn<T>(&self, task: T) -> TaskHandle<T>
+    where
+        T: Task + 'static,
+    {
+        TaskHandle::spawn(&self.handle, task)
     }
 
     pub fn run(&self) -> Result<()> {
