@@ -3,7 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_void};
 use std::mem::MaybeUninit;
 use std::panic::{self, AssertUnwindSafe};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::{mem, ptr, slice};
 
 use windows::core::PCWSTR;
@@ -22,8 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
-    Bitmap, Cursor, Error, EventLoopHandle, MouseButton, Point, RawWindow, Rect, Response, Result,
-    Size, Window, WindowContext, WindowEvent, WindowOptions,
+    Bitmap, Context, Cursor, Error, Event, EventLoopHandle, Key, MouseButton, Point, RawWindow,
+    Rect, Response, Result, Size, Task, Window, WindowEvent, WindowOptions,
 };
 
 #[allow(non_snake_case)]
@@ -111,7 +111,6 @@ pub unsafe extern "system" fn wnd_proc(
 
     let window = Window::from_inner(WindowInner::from_state(WindowState::from_raw(state_ptr)));
     let state = &window.inner.state;
-    let cx = WindowContext::new(&state.event_loop, &window);
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         match msg {
@@ -158,7 +157,7 @@ pub unsafe extern "system" fn wnd_proc(
                 gdi::DeleteObject(rgn);
 
                 // Only validate the dirty region if we successfully invoked the event handler.
-                if state.handle_event(&cx, WindowEvent::Expose(&rects)).is_some() {
+                if state.handle_event(WindowEvent::Expose(&rects)).is_some() {
                     gdi::ValidateRgn(hwnd, gdi::HRGN(0));
                 }
 
@@ -167,7 +166,7 @@ pub unsafe extern "system" fn wnd_proc(
             msg::WM_MOUSEMOVE => {
                 if !state.mouse_in_window.get() {
                     state.mouse_in_window.set(true);
-                    state.handle_event(&cx, WindowEvent::MouseEnter);
+                    state.handle_event(WindowEvent::MouseEnter);
 
                     let _ = TrackMouseEvent(&mut TRACKMOUSEEVENT {
                         cbSize: mem::size_of::<TRACKMOUSEEVENT>() as u32,
@@ -183,13 +182,13 @@ pub unsafe extern "system" fn wnd_proc(
                 };
                 let point = point_physical.scale(state.scale().recip());
 
-                state.handle_event(&cx, WindowEvent::MouseMove(point));
+                state.handle_event(WindowEvent::MouseMove(point));
 
                 return Some(LRESULT(0));
             }
             WM_MOUSELEAVE => {
                 state.mouse_in_window.set(false);
-                state.handle_event(&cx, WindowEvent::MouseExit);
+                state.handle_event(WindowEvent::MouseExit);
             }
             msg::WM_LBUTTONDOWN
             | msg::WM_LBUTTONUP
@@ -241,7 +240,7 @@ pub unsafe extern "system" fn wnd_proc(
                             _ => {}
                         }
 
-                        if state.handle_event(&cx, event) == Some(Response::Capture) {
+                        if state.handle_event(event) == Some(Response::Capture) {
                             return Some(LRESULT(0));
                         }
                     }
@@ -255,12 +254,12 @@ pub unsafe extern "system" fn wnd_proc(
                     _ => unreachable!(),
                 };
 
-                if state.handle_event(&cx, WindowEvent::Scroll(point)) == Some(Response::Capture) {
+                if state.handle_event(WindowEvent::Scroll(point)) == Some(Response::Capture) {
                     return Some(LRESULT(0));
                 }
             }
             msg::WM_CLOSE => {
-                state.handle_event(&cx, WindowEvent::Close);
+                state.handle_event(WindowEvent::Close);
                 return Some(LRESULT(0));
             }
             msg::WM_DESTROY => {
@@ -299,8 +298,8 @@ pub struct WindowState {
     mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
     event_loop: EventLoopHandle,
-    #[allow(clippy::type_complexity)]
-    handler: RefCell<Box<dyn FnMut(&WindowContext, WindowEvent) -> Response>>,
+    handler: Weak<RefCell<dyn Task>>,
+    key: Key,
 }
 
 impl WindowState {
@@ -344,12 +343,11 @@ impl WindowState {
         }
     }
 
-    pub fn handle_event(&self, cx: &WindowContext, event: WindowEvent) -> Option<Response> {
-        if let Ok(mut handler) = self.handler.try_borrow_mut() {
-            return Some(handler(cx, event));
-        }
-
-        None
+    pub fn handle_event(&self, event: WindowEvent) -> Option<Response> {
+        let task_ref = self.handler.upgrade()?;
+        let mut handler = task_ref.try_borrow_mut().ok()?;
+        let cx = Context::new(&self.event_loop, &task_ref);
+        Some(handler.event(&cx, self.key, Event::Window(event)))
     }
 
     pub fn close(&self) {
@@ -369,14 +367,9 @@ impl WindowInner {
         WindowInner { state }
     }
 
-    pub fn open<H>(
-        options: &WindowOptions,
-        event_loop: &EventLoopHandle,
-        handler: H,
-    ) -> Result<WindowInner>
-    where
-        H: FnMut(&WindowContext, WindowEvent) -> Response + 'static,
-    {
+    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
+        let event_loop = context.event_loop;
+
         if !event_loop.inner.state.open.get() {
             return Err(Error::EventLoopDropped);
         }
@@ -454,7 +447,8 @@ impl WindowInner {
                 mouse_in_window: Cell::new(false),
                 cursor: Cell::new(Cursor::Arrow),
                 event_loop: event_loop.clone(),
-                handler: RefCell::new(Box::new(handler)),
+                handler: Rc::downgrade(context.task),
+                key,
             });
 
             let state_ptr = Rc::into_raw(Rc::clone(&state));

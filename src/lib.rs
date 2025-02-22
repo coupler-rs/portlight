@@ -7,9 +7,8 @@ mod window;
 
 pub use error::{Error, Result};
 pub use event_loop::{EventLoop, EventLoopHandle, EventLoopMode, EventLoopOptions};
-pub use task::{Context, Event, Response, Task, TaskHandle};
+pub use task::{Context, Event, Key, Response, Task, TaskHandle};
 pub use timer::{Timer, TimerContext};
 pub use window::{
-    Bitmap, Cursor, MouseButton, Point, RawWindow, Rect, Size, Window, WindowContext, WindowEvent,
-    WindowOptions,
+    Bitmap, Cursor, MouseButton, Point, RawWindow, Rect, Size, Window, WindowEvent, WindowOptions,
 };
