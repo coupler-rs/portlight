@@ -16,7 +16,7 @@ use core_foundation::runloop::*;
 use super::event_loop::{EventLoopInner, EventLoopState};
 use super::ffi::display_link::*;
 use super::window::{View, WindowInner};
-use crate::{EventLoopHandle, Window, WindowContext, WindowEvent};
+use crate::{EventLoopHandle, Window, WindowEvent};
 
 fn display_from_screen(screen: &NSScreen) -> Option<CGDirectDisplayID> {
     unsafe {
@@ -80,8 +80,7 @@ extern "C" fn perform(info: *const c_void) {
                     let display = display_from_view(&*view);
                     if display == Some(state.display_id) {
                         let window = Window::from_inner(WindowInner::from_state(window_state));
-                        let cx = WindowContext::new(&state.event_loop, &window);
-                        window.inner.state.handle_event(&cx, WindowEvent::Frame);
+                        window.inner.state.handle_event(WindowEvent::Frame);
                     }
                 }
             }

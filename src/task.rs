@@ -7,17 +7,26 @@ use crate::window::WindowEvent;
 use crate::EventLoopHandle;
 
 pub struct Context<'a> {
-    event_loop: &'a EventLoopHandle,
+    pub(crate) event_loop: &'a EventLoopHandle,
+    pub(crate) task: &'a Rc<RefCell<dyn Task>>,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
 
 impl Context<'_> {
-    fn new(event_loop: &EventLoopHandle) -> Context {
+    pub(crate) fn new<'a>(
+        event_loop: &'a EventLoopHandle,
+        task: &'a Rc<RefCell<dyn Task>>,
+    ) -> Context<'a> {
         Context {
             event_loop,
+            task,
             _marker: PhantomData,
         }
+    }
+
+    pub fn event_loop(&self) -> &EventLoopHandle {
+        self.event_loop
     }
 }
 
@@ -60,7 +69,8 @@ impl<T: Task + 'static> TaskHandle<T> {
         F: FnOnce(&mut T, &Context) -> R,
     {
         if let Ok(mut task) = self.task.try_borrow_mut() {
-            f(&mut *task, &Context::new(&self.event_loop))
+            let task_ref = Rc::clone(&self.task) as _;
+            f(&mut *task, &Context::new(&self.event_loop, &task_ref))
         } else {
             panic!("already mutably borrowed")
         }
@@ -71,7 +81,8 @@ impl<T: Task + 'static> TaskHandle<T> {
         F: FnOnce(&mut T, &Context) -> R,
     {
         if let Ok(mut task) = self.task.try_borrow_mut() {
-            Ok(f(&mut *task, &Context::new(&self.event_loop)))
+            let task_ref = Rc::clone(&self.task) as _;
+            Ok(f(&mut *task, &Context::new(&self.event_loop, &task_ref)))
         } else {
             Err(BorrowMutError)
         }
