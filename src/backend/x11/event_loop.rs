@@ -14,8 +14,8 @@ use x11rb::{cursor, protocol, resource_manager};
 use super::timer::{TimerInner, Timers};
 use super::window::{WindowInner, WindowState};
 use crate::{
-    Cursor, Error, EventLoopOptions, MouseButton, Point, Rect, Response, Result, TimerContext,
-    Window, WindowContext, WindowEvent,
+    Context, Cursor, Error, Event, EventLoopOptions, MouseButton, Point, Rect, Response, Result,
+    TimerContext, Window, WindowEvent,
 };
 
 fn mouse_button_from_code(code: Button) -> Option<MouseButton> {
@@ -226,9 +226,11 @@ impl EventLoopInner {
         }
     }
 
-    fn handle_event(&self, window: &Window, event: WindowEvent) -> Response {
-        let cx = WindowContext::new(&window.inner.state.event_loop, window);
-        window.inner.state.handler.borrow_mut()(&cx, event)
+    fn handle_event(&self, window: &Window, event: WindowEvent) -> Option<Response> {
+        let task_ref = window.inner.state.handler.upgrade()?;
+        let mut handler = task_ref.try_borrow_mut().ok()?;
+        let cx = Context::new(&window.inner.state.event_loop, &task_ref);
+        Some(handler.event(&cx, window.inner.state.key, Event::Window(event)))
     }
 
     fn drain_events(&self) -> Result<()> {

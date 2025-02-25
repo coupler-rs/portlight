@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_ulong, c_void};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::{mem, ptr, slice};
 
 use x11rb::connection::Connection;
@@ -15,8 +15,8 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::event_loop::{EventLoopInner, EventLoopState};
 use super::OsError;
 use crate::{
-    Bitmap, Cursor, Error, EventLoopHandle, Point, RawWindow, Rect, Response, Result, Size,
-    WindowContext, WindowEvent, WindowOptions,
+    Bitmap, Context, Cursor, Error, EventLoopHandle, Key, Point, RawWindow, Rect, Result, Size,
+    Task, WindowOptions,
 };
 
 pub struct ShmState {
@@ -38,7 +38,8 @@ pub struct WindowState {
     pub present_state: RefCell<Option<PresentState>>,
     pub expose_rects: RefCell<Vec<Rect>>,
     pub event_loop: EventLoopHandle,
-    pub handler: RefCell<Box<dyn FnMut(&WindowContext, WindowEvent) -> Response>>,
+    pub handler: Weak<RefCell<dyn Task>>,
+    pub key: Key,
 }
 
 impl WindowState {
@@ -134,14 +135,9 @@ impl WindowInner {
         WindowInner { state }
     }
 
-    pub fn open<H>(
-        options: &WindowOptions,
-        event_loop: &EventLoopHandle,
-        handler: H,
-    ) -> Result<WindowInner>
-    where
-        H: FnMut(&WindowContext, WindowEvent) -> Response + 'static,
-    {
+    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
+        let event_loop = context.event_loop;
+
         if !event_loop.inner.state.open.get() {
             return Err(Error::EventLoopDropped);
         }
@@ -245,7 +241,8 @@ impl WindowInner {
             event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
                 &event_loop_state,
             ))),
-            handler: RefCell::new(Box::new(handler)),
+            handler: Rc::downgrade(context.task),
+            key,
         });
 
         event_loop_state.windows.borrow_mut().insert(window_id, Rc::clone(&state));
