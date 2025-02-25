@@ -24,7 +24,7 @@ extern "C" fn release(info: *const c_void) {
         unsafe { Rc::decrement_strong_count(info as *const TimerState) };
     }));
 
-    // If a panic occurs while dropping the Rc<WindowState>, the only thing left to do is abort.
+    // If a panic occurs while dropping the Rc<TimerState>, the only thing left to do is abort.
     if let Err(_panic) = result {
         std::process::abort();
     }
