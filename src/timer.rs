@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use crate::{backend, Context, Key, Result};
 
-#[derive(Clone)]
 pub struct Timer {
     pub(crate) inner: backend::TimerInner,
     // ensure !Send and !Sync on all platforms
@@ -20,8 +19,10 @@ impl Timer {
             _marker: PhantomData,
         })
     }
+}
 
-    pub fn cancel(&self) {
+impl Drop for Timer {
+    fn drop(&mut self) {
         self.inner.cancel();
     }
 }
