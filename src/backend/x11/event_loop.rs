@@ -12,10 +12,10 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::{cursor, protocol, resource_manager};
 
 use super::timer::Timers;
-use super::window::{WindowInner, WindowState};
+use super::window::WindowState;
 use crate::{
     Context, Cursor, Error, Event, EventLoopOptions, MouseButton, Point, Rect, Response, Result,
-    Window, WindowEvent,
+    WindowEvent,
 };
 
 fn mouse_button_from_code(code: Button) -> Option<MouseButton> {
@@ -207,19 +207,15 @@ impl EventLoopInner {
         Ok(())
     }
 
-    fn get_window(&self, id: WindowId) -> Option<Window> {
-        if let Some(window_state) = self.state.windows.borrow().get(&id).cloned() {
-            Some(Window::from_inner(WindowInner::from_state(window_state)))
-        } else {
-            None
-        }
+    fn get_window(&self, id: WindowId) -> Option<Rc<WindowState>> {
+        self.state.windows.borrow().get(&id).cloned()
     }
 
-    fn handle_event(&self, window: &Window, event: WindowEvent) -> Option<Response> {
-        let task_ref = window.inner.state.handler.upgrade()?;
+    fn handle_event(&self, state: &WindowState, event: WindowEvent) -> Option<Response> {
+        let task_ref = state.handler.upgrade()?;
         let mut handler = task_ref.try_borrow_mut().ok()?;
-        let cx = Context::new(&window.inner.state.event_loop, &task_ref);
-        Some(handler.event(&cx, window.inner.state.key, Event::Window(event)))
+        let cx = Context::new(&state.event_loop, &task_ref);
+        Some(handler.event(&cx, state.key, Event::Window(event)))
     }
 
     fn drain_events(&self) -> Result<()> {
@@ -243,7 +239,7 @@ impl EventLoopInner {
                         };
                         let rect = rect_physical.scale(self.state.scale.recip());
 
-                        let expose_rects = &window.inner.state.expose_rects;
+                        let expose_rects = &window.expose_rects;
                         expose_rects.borrow_mut().push(rect);
 
                         if event.count == 0 {
