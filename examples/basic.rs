@@ -13,6 +13,7 @@ struct State {
     framebuffer: Vec<u32>,
     width: usize,
     height: usize,
+    timer: Option<Timer>,
 }
 
 impl Drop for State {
@@ -87,6 +88,7 @@ fn main() {
         framebuffer: Vec::new(),
         width: 0,
         height: 0,
+        timer: None,
     });
 
     state.with(|state, cx| {
@@ -99,7 +101,7 @@ fn main() {
         window.show();
         state.window = Some(window);
 
-        Timer::repeat(Duration::from_millis(1000), cx, Key(0)).unwrap();
+        state.timer = Some(Timer::repeat(Duration::from_millis(1000), cx, Key(0)).unwrap());
     });
 
     event_loop.run().unwrap();
