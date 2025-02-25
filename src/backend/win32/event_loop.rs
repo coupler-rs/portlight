@@ -3,7 +3,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
 use std::rc::Rc;
-use std::time::Duration;
 use std::{mem, ptr};
 
 use windows::core::PCWSTR;
@@ -17,11 +16,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::dpi::DpiFns;
-use super::timer::{TimerInner, Timers};
+use super::timer::Timers;
 use super::vsync::VsyncThreads;
 use super::window::{self, WindowState};
 use super::{class_name, hinstance, to_wstring, WM_USER_VBLANK};
-use crate::{Error, EventLoopHandle, EventLoopMode, EventLoopOptions, Result, TimerContext};
+use crate::{Error, EventLoopHandle, EventLoopMode, EventLoopOptions, Result};
 
 fn register_message_class() -> Result<PCWSTR> {
     let class_name = to_wstring(&class_name("message-"));
@@ -210,17 +209,6 @@ impl EventLoopInner {
         state.vsync_threads.init(&state);
 
         Ok(EventLoopInner { state })
-    }
-
-    pub fn set_timer<H>(&self, duration: Duration, handler: H) -> Result<TimerInner>
-    where
-        H: FnMut(&TimerContext) + 'static,
-    {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
-        Ok(self.state.timers.set_timer(&self.state, duration, handler))
     }
 
     pub fn run(&self) -> Result<()> {
