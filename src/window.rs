@@ -195,13 +195,13 @@ impl WindowOptions {
     }
 
     pub fn open(&self, context: &Context, key: Key) -> Result<Window> {
-        Ok(Window::from_inner(backend::WindowInner::open(
-            self, context, key,
-        )?))
+        Ok(Window {
+            inner: backend::WindowInner::open(self, context, key)?,
+            _marker: PhantomData,
+        })
     }
 }
 
-#[derive(Clone)]
 pub struct Window {
     pub(crate) inner: backend::WindowInner,
     // ensure !Send and !Sync on all platforms
@@ -209,13 +209,6 @@ pub struct Window {
 }
 
 impl Window {
-    pub(crate) fn from_inner(inner: backend::WindowInner) -> Window {
-        Window {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-
     pub fn show(&self) {
         self.inner.show();
     }

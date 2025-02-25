@@ -430,10 +430,6 @@ pub struct WindowInner {
 }
 
 impl WindowInner {
-    pub fn from_state(state: Rc<WindowState>) -> WindowInner {
-        WindowInner { state }
-    }
-
     pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
         autoreleasepool(|_| {
             let event_loop = context.event_loop;
