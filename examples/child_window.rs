@@ -108,10 +108,10 @@ fn main() {
     parent_event_loop.run().unwrap();
 
     child_state.with(|state, _| {
-        state.window.as_ref().unwrap().close();
+        state.window = None;
     });
 
     parent_state.with(|state, _| {
-        state.window.as_ref().unwrap().close();
+        state.window = None;
     });
 }

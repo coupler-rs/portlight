@@ -241,12 +241,14 @@ impl Window {
         self.inner.set_mouse_position(position);
     }
 
-    pub fn close(&self) {
-        self.inner.close();
-    }
-
     pub fn as_raw(&self) -> Result<RawWindow> {
         self.inner.as_raw()
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        self.inner.close();
     }
 }
 
