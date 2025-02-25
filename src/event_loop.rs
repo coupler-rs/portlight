@@ -1,8 +1,7 @@
 use std::fmt;
 use std::marker::PhantomData;
-use std::time::Duration;
 
-use crate::{backend, Result, Task, TaskHandle, Timer, TimerContext};
+use crate::{backend, Result, Task, TaskHandle};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum EventLoopMode {
@@ -111,13 +110,6 @@ impl EventLoopHandle {
             inner,
             _marker: PhantomData,
         }
-    }
-
-    pub fn set_timer<H>(&self, duration: Duration, handler: H) -> Result<Timer>
-    where
-        H: FnMut(&TimerContext) + 'static,
-    {
-        Ok(Timer::from_inner(self.inner.set_timer(duration, handler)?))
     }
 
     pub fn exit(&self) {

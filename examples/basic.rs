@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use portlight::{
-    Bitmap, Context, Event, EventLoop, Key, Response, Size, Task, Window, WindowEvent,
+    Bitmap, Context, Event, EventLoop, Key, Response, Size, Task, Timer, Window, WindowEvent,
     WindowOptions,
 };
 
@@ -71,6 +71,8 @@ impl Task for State {
                     cx.event_loop().exit();
                 }
             }
+        } else if let Event::Timer = event {
+            println!("timer");
         }
 
         Response::Ignore
@@ -96,14 +98,9 @@ fn main() {
 
         window.show();
         state.window = Some(window);
-    });
 
-    event_loop
-        .handle()
-        .set_timer(Duration::from_millis(1000), |_| {
-            println!("timer");
-        })
-        .unwrap();
+        Timer::repeat(Duration::from_millis(1000), cx, Key(0)).unwrap();
+    });
 
     event_loop.run().unwrap();
 }

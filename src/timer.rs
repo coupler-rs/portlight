@@ -1,32 +1,8 @@
 use std::fmt;
 use std::marker::PhantomData;
+use std::time::Duration;
 
-use crate::{backend, EventLoopHandle};
-
-pub struct TimerContext<'a> {
-    event_loop: &'a EventLoopHandle,
-    timer: &'a Timer,
-    // ensure !Send and !Sync on all platforms
-    _marker: PhantomData<*mut ()>,
-}
-
-impl<'a> TimerContext<'a> {
-    pub(crate) fn new(event_loop: &'a EventLoopHandle, timer: &'a Timer) -> TimerContext<'a> {
-        TimerContext {
-            event_loop,
-            timer,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn event_loop(&self) -> &EventLoopHandle {
-        self.event_loop
-    }
-
-    pub fn timer(&self) -> &Timer {
-        self.timer
-    }
-}
+use crate::{backend, Context, Key, Result};
 
 #[derive(Clone)]
 pub struct Timer {
@@ -36,11 +12,13 @@ pub struct Timer {
 }
 
 impl Timer {
-    pub(crate) fn from_inner(inner: backend::TimerInner) -> Timer {
-        Timer {
+    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Timer> {
+        let inner = backend::TimerInner::repeat(duration, context, key)?;
+
+        Ok(Timer {
             inner,
             _marker: PhantomData,
-        }
+        })
     }
 
     pub fn cancel(&self) {

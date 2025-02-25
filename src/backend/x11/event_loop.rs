@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::present::{self, ConnectionExt as _};
@@ -11,11 +11,11 @@ use x11rb::protocol::xproto::{self, Button, ConnectionExt as _, Window as Window
 use x11rb::rust_connection::RustConnection;
 use x11rb::{cursor, protocol, resource_manager};
 
-use super::timer::{TimerInner, Timers};
+use super::timer::Timers;
 use super::window::{WindowInner, WindowState};
 use crate::{
     Context, Cursor, Error, Event, EventLoopOptions, MouseButton, Point, Rect, Response, Result,
-    TimerContext, Window, WindowEvent,
+    Window, WindowEvent,
 };
 
 fn mouse_button_from_code(code: Button) -> Option<MouseButton> {
@@ -146,17 +146,6 @@ impl EventLoopInner {
         let inner = EventLoopInner { state };
 
         Ok(inner)
-    }
-
-    pub fn set_timer<H>(&self, duration: Duration, handler: H) -> Result<TimerInner>
-    where
-        H: FnMut(&TimerContext) + 'static,
-    {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
-        Ok(self.state.timers.set_timer(&self.state, duration, handler))
     }
 
     pub fn run(&self) -> Result<()> {

@@ -3,7 +3,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic;
 use std::rc::Rc;
-use std::time::Duration;
 
 use objc2::rc::{autoreleasepool, Id};
 use objc2::runtime::AnyClass;
@@ -16,9 +15,9 @@ use objc2_app_kit::{
 use objc2_foundation::{MainThreadMarker, NSPoint, NSSize};
 
 use super::display_links::DisplayLinks;
-use super::timer::{TimerInner, Timers};
+use super::timer::Timers;
 use super::window::{View, WindowState};
-use crate::{Error, EventLoopMode, EventLoopOptions, Result, TimerContext};
+use crate::{Error, EventLoopMode, EventLoopOptions, Result};
 
 struct RunGuard<'a> {
     running: &'a Cell<bool>,
@@ -150,17 +149,6 @@ impl EventLoopInner {
 
             Ok(EventLoopInner { state })
         })
-    }
-
-    pub fn set_timer<H>(&self, duration: Duration, handler: H) -> Result<TimerInner>
-    where
-        H: FnMut(&TimerContext) + 'static,
-    {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
-        Ok(self.state.timers.set_timer(&self.state, duration, handler))
     }
 
     pub fn run(&self) -> Result<()> {
