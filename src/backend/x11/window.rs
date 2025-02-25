@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_ulong, c_void};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::{mem, ptr, slice};
 
 use x11rb::connection::Connection;
@@ -12,11 +12,11 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::wrapper::ConnectionExt as _;
 
-use super::app::{AppInner, AppState};
+use super::event_loop::{EventLoopInner, EventLoopState};
 use super::OsError;
 use crate::{
-    AppHandle, Bitmap, Cursor, Error, Event, Point, RawWindow, Rect, Response, Result, Size,
-    WindowContext, WindowOptions,
+    Bitmap, Context, Cursor, Error, EventLoopHandle, Key, Point, RawWindow, Rect, Result, Size,
+    Task, WindowOptions,
 };
 
 pub struct ShmState {
@@ -37,13 +37,18 @@ pub struct WindowState {
     pub shm_state: RefCell<Option<ShmState>>,
     pub present_state: RefCell<Option<PresentState>>,
     pub expose_rects: RefCell<Vec<Rect>>,
-    pub app: AppHandle,
-    pub handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
+    pub event_loop: EventLoopHandle,
+    pub handler: Weak<RefCell<dyn Task>>,
+    pub key: Key,
 }
 
 impl WindowState {
-    fn init_shm(app_state: &AppState, width: usize, height: usize) -> Result<Option<ShmState>> {
-        if !app_state.shm_supported {
+    fn init_shm(
+        event_loop_state: &EventLoopState,
+        width: usize,
+        height: usize,
+    ) -> Result<Option<ShmState>> {
+        if !event_loop_state.shm_supported {
             return Ok(None);
         }
 
@@ -74,8 +79,8 @@ impl WindowState {
             ptr
         };
 
-        let seg_id = app_state.connection.generate_id()?;
-        app_state.connection.shm_attach(seg_id, shm_id as u32, false)?;
+        let seg_id = event_loop_state.connection.generate_id()?;
+        event_loop_state.connection.shm_attach(seg_id, shm_id as u32, false)?;
 
         Ok(Some(ShmState {
             shm_id,
@@ -88,7 +93,7 @@ impl WindowState {
 
     fn deinit_shm(&self) {
         if let Some(shm_state) = self.shm_state.take() {
-            let _ = self.app.inner.state.connection.shm_detach(shm_state.seg_id);
+            let _ = self.event_loop.inner.state.connection.shm_detach(shm_state.seg_id);
 
             unsafe {
                 libc::shmdt(shm_state.ptr);
@@ -99,7 +104,7 @@ impl WindowState {
 
     pub fn close(&self) {
         if let Some(window_id) = self.window_id.take() {
-            let connection = &self.app.inner.state.connection;
+            let connection = &self.event_loop.inner.state.connection;
 
             if let Some(gc_id) = self.gc_id.take() {
                 let _ = connection.free_gc(gc_id);
@@ -126,20 +131,15 @@ pub struct WindowInner {
 }
 
 impl WindowInner {
-    pub fn from_state(state: Rc<WindowState>) -> WindowInner {
-        WindowInner { state }
-    }
+    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
+        let event_loop = context.event_loop;
 
-    pub fn open<H>(options: &WindowOptions, app: &AppHandle, handler: H) -> Result<WindowInner>
-    where
-        H: FnMut(&WindowContext, Event) -> Response + 'static,
-    {
-        if !app.inner.state.open.get() {
-            return Err(Error::AppDropped);
+        if !event_loop.inner.state.open.get() {
+            return Err(Error::EventLoopDropped);
         }
 
-        let app_state = &app.inner.state;
-        let connection = &app_state.connection;
+        let event_loop_state = &event_loop.inner.state;
+        let connection = &event_loop_state.connection;
 
         let window_id = connection.generate_id()?;
 
@@ -150,13 +150,13 @@ impl WindowInner {
                 return Err(Error::InvalidWindowHandle);
             }
         } else {
-            connection.setup().roots[app_state.screen_index].root
+            connection.setup().roots[event_loop_state.screen_index].root
         };
 
         let position = options.position.unwrap_or(Point::new(0.0, 0.0));
-        let position_physical = position.scale(app_state.scale);
+        let position_physical = position.scale(event_loop_state.scale);
 
-        let size_physical = options.size.scale(app_state.scale);
+        let size_physical = options.size.scale(event_loop_state.scale);
 
         let event_mask = EventMask::EXPOSURE
             | EventMask::ENTER_WINDOW
@@ -190,28 +190,28 @@ impl WindowInner {
         connection.change_property8(
             PropMode::REPLACE,
             window_id,
-            app_state.atoms._NET_WM_NAME,
-            app_state.atoms.UTF8_STRING,
+            event_loop_state.atoms._NET_WM_NAME,
+            event_loop_state.atoms.UTF8_STRING,
             options.title.as_bytes(),
         )?;
         connection.change_property32(
             PropMode::REPLACE,
             window_id,
-            app_state.atoms.WM_PROTOCOLS,
+            event_loop_state.atoms.WM_PROTOCOLS,
             AtomEnum::ATOM,
-            &[app_state.atoms.WM_DELETE_WINDOW],
+            &[event_loop_state.atoms.WM_DELETE_WINDOW],
         )?;
 
         let gc_id = connection.generate_id()?;
         connection.create_gc(gc_id, window_id, &CreateGCAux::default())?;
 
         let shm_state = WindowState::init_shm(
-            &app_state,
+            &event_loop_state,
             size_physical.width.round() as usize,
             size_physical.height.round() as usize,
         )?;
 
-        let present_state = if app_state.present_supported {
+        let present_state = if event_loop_state.present_supported {
             let event_id = connection.generate_id()?;
             connection.present_select_input(
                 event_id,
@@ -234,18 +234,21 @@ impl WindowInner {
             shm_state: RefCell::new(shm_state),
             present_state: RefCell::new(present_state),
             expose_rects: RefCell::new(Vec::new()),
-            app: AppHandle::from_inner(AppInner::from_state(Rc::clone(&app_state))),
-            handler: RefCell::new(Box::new(handler)),
+            event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
+                &event_loop_state,
+            ))),
+            handler: Rc::downgrade(context.task),
+            key,
         });
 
-        app_state.windows.borrow_mut().insert(window_id, Rc::clone(&state));
+        event_loop_state.windows.borrow_mut().insert(window_id, Rc::clone(&state));
 
         Ok(WindowInner { state })
     }
 
     pub fn show(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            let connection = &self.state.app.inner.state.connection;
+            let connection = &self.state.event_loop.inner.state.connection;
             let _ = connection.map_window(window_id);
             let _ = connection.flush();
         }
@@ -253,7 +256,7 @@ impl WindowInner {
 
     pub fn hide(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            let connection = &self.state.app.inner.state.connection;
+            let connection = &self.state.event_loop.inner.state.connection;
             let _ = connection.unmap_window(window_id);
             let _ = connection.flush();
         }
@@ -264,16 +267,16 @@ impl WindowInner {
     }
 
     fn size_inner(&self) -> Result<Size> {
-        let app_state = &self.state.app.inner.state;
+        let event_loop_state = &self.state.event_loop.inner.state;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
-        let geom = app_state.connection.get_geometry(window_id)?.reply()?;
+        let geom = event_loop_state.connection.get_geometry(window_id)?.reply()?;
         let size_physical = Size::new(geom.width as f64, geom.height as f64);
 
-        Ok(size_physical.scale(app_state.scale.recip()))
+        Ok(size_physical.scale(event_loop_state.scale.recip()))
     }
 
     pub fn scale(&self) -> f64 {
-        self.state.app.inner.state.scale
+        self.state.event_loop.inner.state.scale
     }
 
     pub fn present(&self, bitmap: Bitmap) {
@@ -285,15 +288,15 @@ impl WindowInner {
     }
 
     fn present_inner(&self, bitmap: Bitmap, rects: Option<&[Rect]>) -> Result<()> {
-        let app_state = &self.state.app.inner.state;
-        let connection = &app_state.connection;
+        let event_loop_state = &self.state.event_loop.inner.state;
+        let connection = &event_loop_state.connection;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
         let gc_id = self.state.gc_id.get().ok_or(Error::WindowClosed)?;
 
         if let Some(rects) = rects {
             let mut x_rects = Vec::with_capacity(rects.len());
             for rect in rects {
-                let rect_physical = rect.scale(app_state.scale);
+                let rect_physical = rect.scale(event_loop_state.scale);
 
                 x_rects.push(Rectangle {
                     x: rect_physical.x.round() as i16,
@@ -370,9 +373,9 @@ impl WindowInner {
     }
 
     fn set_cursor_inner(&self, cursor: Cursor) -> Result<()> {
-        let app_state = &self.state.app.inner.state;
-        let connection = &app_state.connection;
-        let cursor_cache = &app_state.cursor_cache;
+        let event_loop_state = &self.state.event_loop.inner.state;
+        let connection = &event_loop_state.connection;
+        let cursor_cache = &event_loop_state.cursor_cache;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
 
         let cursor_id = if let Some(cursor_id) = cursor_cache.borrow_mut().get(&cursor) {
@@ -381,7 +384,7 @@ impl WindowInner {
             if cursor == Cursor::None {
                 let cursor_id = connection.generate_id()?;
                 let pixmap_id = connection.generate_id()?;
-                let root = connection.setup().roots[app_state.screen_index].root;
+                let root = connection.setup().roots[event_loop_state.screen_index].root;
                 connection.create_pixmap(1, pixmap_id, root, 1, 1)?;
                 connection
                     .create_cursor(cursor_id, pixmap_id, pixmap_id, 0, 0, 0, 0, 0, 0, 0, 0)?;
@@ -402,7 +405,7 @@ impl WindowInner {
                     Cursor::Wait => "watch",
                     Cursor::None => unreachable!(),
                 };
-                app_state.cursor_handle.load_cursor(connection, cursor_name)?
+                event_loop_state.cursor_handle.load_cursor(connection, cursor_name)?
             }
         };
 
@@ -417,10 +420,10 @@ impl WindowInner {
 
     pub fn set_mouse_position(&self, position: Point) {
         if let Some(window_id) = self.state.window_id.get() {
-            let app_state = &self.state.app.inner.state;
-            let position_physical = position.scale(app_state.scale);
+            let event_loop_state = &self.state.event_loop.inner.state;
+            let position_physical = position.scale(event_loop_state.scale);
 
-            let _ = app_state.connection.warp_pointer(
+            let _ = event_loop_state.connection.warp_pointer(
                 x11rb::NONE,
                 window_id,
                 0,
@@ -430,18 +433,18 @@ impl WindowInner {
                 position_physical.x.round() as i16,
                 position_physical.y.round() as i16,
             );
-            let _ = app_state.connection.flush();
+            let _ = event_loop_state.connection.flush();
         }
     }
 
     pub fn close(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            self.state.app.inner.state.windows.borrow_mut().remove(&window_id);
+            self.state.event_loop.inner.state.windows.borrow_mut().remove(&window_id);
         }
 
         self.state.close();
 
-        let _ = self.state.app.inner.state.connection.flush();
+        let _ = self.state.event_loop.inner.state.connection.flush();
     }
 
     pub fn as_raw(&self) -> Result<RawWindow> {

@@ -1,13 +1,13 @@
 use std::fmt;
 
-mod app;
 mod display_links;
+mod event_loop;
 mod ffi;
 mod surface;
 mod timer;
 mod window;
 
-pub use app::AppInner;
+pub use event_loop::EventLoopInner;
 pub use timer::TimerInner;
 pub use window::WindowInner;
 

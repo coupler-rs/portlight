@@ -3,7 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_void};
 use std::mem::MaybeUninit;
 use std::panic::{self, AssertUnwindSafe};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::{mem, ptr, slice};
 
 use windows::core::PCWSTR;
@@ -19,11 +19,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     ShowWindow, UnregisterClassW, CREATESTRUCTW, HCURSOR, HICON, HMENU, WINDOW_EX_STYLE, WNDCLASSW,
 };
 
-use super::app::AppState;
+use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
-    AppHandle, Bitmap, Cursor, Error, Event, MouseButton, Point, RawWindow, Rect, Response, Result,
-    Size, Window, WindowContext, WindowOptions,
+    Bitmap, Context, Cursor, Error, Event, EventLoopHandle, Key, MouseButton, Point, RawWindow,
+    Rect, Response, Result, Size, Task, WindowEvent, WindowOptions,
 };
 
 #[allow(non_snake_case)]
@@ -94,10 +94,10 @@ pub unsafe extern "system" fn wnd_proc(
 ) -> LRESULT {
     if msg == msg::WM_NCCREATE {
         let create_struct = &*(lparam.0 as *const CREATESTRUCTW);
-        let app_state = &*(create_struct.lpCreateParams as *const AppState);
+        let event_loop_state = &*(create_struct.lpCreateParams as *const EventLoopState);
 
         #[allow(non_snake_case)]
-        if let Some(EnableNonClientDpiScaling) = app_state.dpi.EnableNonClientDpiScaling {
+        if let Some(EnableNonClientDpiScaling) = event_loop_state.dpi.EnableNonClientDpiScaling {
             EnableNonClientDpiScaling(hwnd);
         }
 
@@ -109,9 +109,7 @@ pub unsafe extern "system" fn wnd_proc(
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     }
 
-    let window = Window::from_inner(WindowInner::from_state(WindowState::from_raw(state_ptr)));
-    let state = &window.inner.state;
-    let cx = WindowContext::new(&state.app, &window);
+    let state = WindowState::from_raw(state_ptr);
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         match msg {
@@ -158,7 +156,7 @@ pub unsafe extern "system" fn wnd_proc(
                 gdi::DeleteObject(rgn);
 
                 // Only validate the dirty region if we successfully invoked the event handler.
-                if state.handle_event(&cx, Event::Expose(&rects)).is_some() {
+                if state.handle_event(WindowEvent::Expose(&rects)).is_some() {
                     gdi::ValidateRgn(hwnd, gdi::HRGN(0));
                 }
 
@@ -167,7 +165,7 @@ pub unsafe extern "system" fn wnd_proc(
             msg::WM_MOUSEMOVE => {
                 if !state.mouse_in_window.get() {
                     state.mouse_in_window.set(true);
-                    state.handle_event(&cx, Event::MouseEnter);
+                    state.handle_event(WindowEvent::MouseEnter);
 
                     let _ = TrackMouseEvent(&mut TRACKMOUSEEVENT {
                         cbSize: mem::size_of::<TRACKMOUSEEVENT>() as u32,
@@ -183,13 +181,13 @@ pub unsafe extern "system" fn wnd_proc(
                 };
                 let point = point_physical.scale(state.scale().recip());
 
-                state.handle_event(&cx, Event::MouseMove(point));
+                state.handle_event(WindowEvent::MouseMove(point));
 
                 return Some(LRESULT(0));
             }
             WM_MOUSELEAVE => {
                 state.mouse_in_window.set(false);
-                state.handle_event(&cx, Event::MouseExit);
+                state.handle_event(WindowEvent::MouseExit);
             }
             msg::WM_LBUTTONDOWN
             | msg::WM_LBUTTONUP
@@ -216,23 +214,23 @@ pub unsafe extern "system" fn wnd_proc(
                         msg::WM_LBUTTONDOWN
                         | msg::WM_MBUTTONDOWN
                         | msg::WM_RBUTTONDOWN
-                        | msg::WM_XBUTTONDOWN => Some(Event::MouseDown(button)),
+                        | msg::WM_XBUTTONDOWN => Some(WindowEvent::MouseDown(button)),
                         msg::WM_LBUTTONUP
                         | msg::WM_MBUTTONUP
                         | msg::WM_RBUTTONUP
-                        | msg::WM_XBUTTONUP => Some(Event::MouseUp(button)),
+                        | msg::WM_XBUTTONUP => Some(WindowEvent::MouseUp(button)),
                         _ => None,
                     };
 
                     if let Some(event) = event {
                         match event {
-                            Event::MouseDown(_) => {
+                            WindowEvent::MouseDown(_) => {
                                 state.mouse_down_count.set(state.mouse_down_count.get() + 1);
                                 if state.mouse_down_count.get() == 1 {
                                     SetCapture(hwnd);
                                 }
                             }
-                            Event::MouseUp(_) => {
+                            WindowEvent::MouseUp(_) => {
                                 state.mouse_down_count.set(state.mouse_down_count.get() - 1);
                                 if state.mouse_down_count.get() == 0 {
                                     let _ = ReleaseCapture();
@@ -241,7 +239,7 @@ pub unsafe extern "system" fn wnd_proc(
                             _ => {}
                         }
 
-                        if state.handle_event(&cx, event) == Some(Response::Capture) {
+                        if state.handle_event(event) == Some(Response::Capture) {
                             return Some(LRESULT(0));
                         }
                     }
@@ -255,12 +253,12 @@ pub unsafe extern "system" fn wnd_proc(
                     _ => unreachable!(),
                 };
 
-                if state.handle_event(&cx, Event::Scroll(point)) == Some(Response::Capture) {
+                if state.handle_event(WindowEvent::Scroll(point)) == Some(Response::Capture) {
                     return Some(LRESULT(0));
                 }
             }
             msg::WM_CLOSE => {
-                state.handle_event(&cx, Event::Close);
+                state.handle_event(WindowEvent::Close);
                 return Some(LRESULT(0));
             }
             msg::WM_DESTROY => {
@@ -276,13 +274,13 @@ pub unsafe extern "system" fn wnd_proc(
     let return_value = match result {
         Ok(return_value) => return_value,
         Err(panic) => {
-            state.app.inner.state.propagate_panic(panic);
+            state.event_loop.inner.state.propagate_panic(panic);
             None
         }
     };
 
     // If a panic occurs while dropping the Rc<WindowState>, the only thing left to do is abort.
-    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(window))) {
+    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(state))) {
         std::process::abort();
     }
 
@@ -298,9 +296,9 @@ pub struct WindowState {
     mouse_down_count: Cell<isize>,
     mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
-    app: AppHandle,
-    #[allow(clippy::type_complexity)]
-    handler: RefCell<Box<dyn FnMut(&WindowContext, Event) -> Response>>,
+    event_loop: EventLoopHandle,
+    handler: Weak<RefCell<dyn Task>>,
+    key: Key,
 }
 
 impl WindowState {
@@ -336,7 +334,7 @@ impl WindowState {
 
     pub fn scale(&self) -> f64 {
         if let Some(hwnd) = self.hwnd.get() {
-            let dpi = unsafe { self.app.inner.state.dpi.dpi_for_window(hwnd) };
+            let dpi = unsafe { self.event_loop.inner.state.dpi.dpi_for_window(hwnd) };
 
             dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64
         } else {
@@ -344,12 +342,11 @@ impl WindowState {
         }
     }
 
-    pub fn handle_event(&self, cx: &WindowContext, event: Event) -> Option<Response> {
-        if let Ok(mut handler) = self.handler.try_borrow_mut() {
-            return Some(handler(cx, event));
-        }
-
-        None
+    pub fn handle_event(&self, event: WindowEvent) -> Option<Response> {
+        let task_ref = self.handler.upgrade()?;
+        let mut handler = task_ref.try_borrow_mut().ok()?;
+        let cx = Context::new(&self.event_loop, &task_ref);
+        Some(handler.event(&cx, self.key, Event::Window(event)))
     }
 
     pub fn close(&self) {
@@ -365,16 +362,11 @@ pub struct WindowInner {
 }
 
 impl WindowInner {
-    pub fn from_state(state: Rc<WindowState>) -> WindowInner {
-        WindowInner { state }
-    }
+    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
+        let event_loop = context.event_loop;
 
-    pub fn open<H>(options: &WindowOptions, app: &AppHandle, handler: H) -> Result<WindowInner>
-    where
-        H: FnMut(&WindowContext, Event) -> Response + 'static,
-    {
-        if !app.inner.state.open.get() {
-            return Err(Error::AppDropped);
+        if !event_loop.inner.state.open.get() {
+            return Err(Error::EventLoopDropped);
         }
 
         unsafe {
@@ -403,9 +395,9 @@ impl WindowInner {
             };
 
             let dpi = if options.parent.is_some() {
-                app.inner.state.dpi.dpi_for_window(parent)
+                event_loop.inner.state.dpi.dpi_for_window(parent)
             } else {
-                app.inner.state.dpi.dpi_for_primary_monitor()
+                event_loop.inner.state.dpi.dpi_for_primary_monitor()
             };
             let scale = dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64;
 
@@ -428,7 +420,7 @@ impl WindowInner {
 
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
-                app.inner.state.window_class,
+                event_loop.inner.state.window_class,
                 PCWSTR(window_name.as_ptr()),
                 style,
                 x,
@@ -438,7 +430,7 @@ impl WindowInner {
                 parent,
                 HMENU(0),
                 hinstance(),
-                Some(Rc::as_ptr(&app.inner.state) as *const c_void),
+                Some(Rc::as_ptr(&event_loop.inner.state) as *const c_void),
             );
             if hwnd == HWND(0) {
                 return Err(windows::core::Error::from_win32().into());
@@ -449,14 +441,15 @@ impl WindowInner {
                 mouse_down_count: Cell::new(0),
                 mouse_in_window: Cell::new(false),
                 cursor: Cell::new(Cursor::Arrow),
-                app: app.clone(),
-                handler: RefCell::new(Box::new(handler)),
+                event_loop: event_loop.clone(),
+                handler: Rc::downgrade(context.task),
+                key,
             });
 
             let state_ptr = Rc::into_raw(Rc::clone(&state));
             SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, state_ptr as isize);
 
-            app.inner.state.windows.borrow_mut().insert(hwnd.0, Rc::clone(&state));
+            event_loop.inner.state.windows.borrow_mut().insert(hwnd.0, Rc::clone(&state));
 
             Ok(WindowInner { state })
         }
@@ -624,7 +617,7 @@ impl WindowInner {
 
     pub fn close(&self) {
         if let Some(hwnd) = self.state.hwnd.get() {
-            self.state.app.inner.state.windows.borrow_mut().remove(&hwnd.0);
+            self.state.event_loop.inner.state.windows.borrow_mut().remove(&hwnd.0);
         }
 
         self.state.close();

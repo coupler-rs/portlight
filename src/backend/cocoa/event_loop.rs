@@ -3,7 +3,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic;
 use std::rc::Rc;
-use std::time::Duration;
 
 use objc2::rc::{autoreleasepool, Id};
 use objc2::runtime::AnyClass;
@@ -16,9 +15,9 @@ use objc2_app_kit::{
 use objc2_foundation::{MainThreadMarker, NSPoint, NSSize};
 
 use super::display_links::DisplayLinks;
-use super::timer::{TimerInner, Timers};
+use super::timer::Timers;
 use super::window::{View, WindowState};
-use crate::{AppMode, AppOptions, Error, Result, TimerContext};
+use crate::{Error, EventLoopMode, EventLoopOptions, Result};
 
 struct RunGuard<'a> {
     running: &'a Cell<bool>,
@@ -42,7 +41,7 @@ impl<'a> Drop for RunGuard<'a> {
     }
 }
 
-pub struct AppState {
+pub struct EventLoopState {
     pub open: Cell<bool>,
     pub running: Cell<bool>,
     pub panic: Cell<Option<Box<dyn Any + Send>>>,
@@ -54,7 +53,7 @@ pub struct AppState {
     pub mtm: MainThreadMarker,
 }
 
-impl AppState {
+impl EventLoopState {
     pub(crate) fn exit(&self) {
         if self.running.get() {
             let app = NSApplication::sharedApplication(self.mtm);
@@ -90,7 +89,7 @@ impl AppState {
     }
 }
 
-impl Drop for AppState {
+impl Drop for EventLoopState {
     fn drop(&mut self) {
         unsafe {
             View::unregister_class(self.class);
@@ -99,18 +98,19 @@ impl Drop for AppState {
 }
 
 #[derive(Clone)]
-pub struct AppInner {
-    pub(super) state: Rc<AppState>,
+pub struct EventLoopInner {
+    pub(super) state: Rc<EventLoopState>,
 }
 
-impl AppInner {
-    pub fn from_state(state: Rc<AppState>) -> AppInner {
-        AppInner { state }
+impl EventLoopInner {
+    pub fn from_state(state: Rc<EventLoopState>) -> EventLoopInner {
+        EventLoopInner { state }
     }
 
-    pub fn new(options: &AppOptions) -> Result<AppInner> {
+    pub fn new(options: &EventLoopOptions) -> Result<EventLoopInner> {
         autoreleasepool(|_| {
-            let mtm = MainThreadMarker::new().expect("App must be created on the main thread");
+            let mtm =
+                MainThreadMarker::new().expect("EventLoop must be created on the main thread");
 
             let class = View::register_class()?;
 
@@ -126,7 +126,7 @@ impl AppInner {
                 empty_cursor
             };
 
-            let state = Rc::new(AppState {
+            let state = Rc::new(EventLoopState {
                 open: Cell::new(true),
                 running: Cell::new(false),
                 panic: Cell::new(None),
@@ -140,32 +140,21 @@ impl AppInner {
 
             state.display_links.init(&state);
 
-            if options.mode == AppMode::Owner {
+            if options.mode == EventLoopMode::Owner {
                 let app = NSApplication::sharedApplication(mtm);
                 app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
                 #[allow(deprecated)]
                 app.activateIgnoringOtherApps(true);
             }
 
-            Ok(AppInner { state })
+            Ok(EventLoopInner { state })
         })
-    }
-
-    pub fn set_timer<H>(&self, duration: Duration, handler: H) -> Result<TimerInner>
-    where
-        H: FnMut(&TimerContext) + 'static,
-    {
-        if !self.state.open.get() {
-            return Err(Error::AppDropped);
-        }
-
-        Ok(self.state.timers.set_timer(&self.state, duration, handler))
     }
 
     pub fn run(&self) -> Result<()> {
         autoreleasepool(|_| {
             if !self.state.open.get() {
-                return Err(Error::AppDropped);
+                return Err(Error::EventLoopDropped);
             }
 
             let _run_guard = RunGuard::new(&self.state.running)?;
@@ -191,7 +180,7 @@ impl AppInner {
 
     pub fn poll(&self) -> Result<()> {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         let _run_guard = RunGuard::new(&self.state.running)?;

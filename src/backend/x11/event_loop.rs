@@ -2,7 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::present::{self, ConnectionExt as _};
@@ -11,11 +11,11 @@ use x11rb::protocol::xproto::{self, Button, ConnectionExt as _, Window as Window
 use x11rb::rust_connection::RustConnection;
 use x11rb::{cursor, protocol, resource_manager};
 
-use super::timer::{TimerInner, Timers};
-use super::window::{WindowInner, WindowState};
+use super::timer::Timers;
+use super::window::WindowState;
 use crate::{
-    AppOptions, Cursor, Error, Event, MouseButton, Point, Rect, Response, Result, TimerContext,
-    Window, WindowContext,
+    Context, Cursor, Error, Event, EventLoopOptions, MouseButton, Point, Rect, Response, Result,
+    WindowEvent,
 };
 
 fn mouse_button_from_code(code: Button) -> Option<MouseButton> {
@@ -77,7 +77,7 @@ impl<'a> Drop for RunGuard<'a> {
     }
 }
 
-pub struct AppState {
+pub struct EventLoopState {
     pub open: Cell<bool>,
     pub run_state: Cell<RunState>,
     pub connection: RustConnection,
@@ -93,7 +93,7 @@ pub struct AppState {
     pub timers: Timers,
 }
 
-impl Drop for AppState {
+impl Drop for EventLoopState {
     fn drop(&mut self) {
         for (_, cursor) in self.cursor_cache.take() {
             let _ = self.connection.free_cursor(cursor);
@@ -103,16 +103,16 @@ impl Drop for AppState {
 }
 
 #[derive(Clone)]
-pub struct AppInner {
-    pub(super) state: Rc<AppState>,
+pub struct EventLoopInner {
+    pub(super) state: Rc<EventLoopState>,
 }
 
-impl AppInner {
-    pub fn from_state(state: Rc<AppState>) -> AppInner {
-        AppInner { state }
+impl EventLoopInner {
+    pub fn from_state(state: Rc<EventLoopState>) -> EventLoopInner {
+        EventLoopInner { state }
     }
 
-    pub fn new(_options: &AppOptions) -> Result<AppInner> {
+    pub fn new(_options: &EventLoopOptions) -> Result<EventLoopInner> {
         let (connection, screen_index) = x11rb::connect(None)?;
         let atoms = Atoms::new(&connection)?.reply()?;
         let shm_supported = connection.extension_information(shm::X11_EXTENSION_NAME)?.is_some();
@@ -127,7 +127,7 @@ impl AppInner {
             1.0
         };
 
-        let state = Rc::new(AppState {
+        let state = Rc::new(EventLoopState {
             open: Cell::new(true),
             run_state: Cell::new(RunState::Stopped),
             connection,
@@ -143,25 +143,14 @@ impl AppInner {
             timers: Timers::new(),
         });
 
-        let inner = AppInner { state };
+        let inner = EventLoopInner { state };
 
         Ok(inner)
     }
 
-    pub fn set_timer<H>(&self, duration: Duration, handler: H) -> Result<TimerInner>
-    where
-        H: FnMut(&TimerContext) + 'static,
-    {
-        if !self.state.open.get() {
-            return Err(Error::AppDropped);
-        }
-
-        Ok(self.state.timers.set_timer(&self.state, duration, handler))
-    }
-
     pub fn run(&self) -> Result<()> {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         let _run_guard = RunGuard::new(&self.state.run_state)?;
@@ -202,7 +191,7 @@ impl AppInner {
 
     pub fn poll(&self) -> Result<()> {
         if !self.state.open.get() {
-            return Err(Error::AppDropped);
+            return Err(Error::EventLoopDropped);
         }
 
         if self.state.run_state.get() != RunState::Stopped {
@@ -218,17 +207,15 @@ impl AppInner {
         Ok(())
     }
 
-    fn get_window(&self, id: WindowId) -> Option<Window> {
-        if let Some(window_state) = self.state.windows.borrow().get(&id).cloned() {
-            Some(Window::from_inner(WindowInner::from_state(window_state)))
-        } else {
-            None
-        }
+    fn get_window(&self, id: WindowId) -> Option<Rc<WindowState>> {
+        self.state.windows.borrow().get(&id).cloned()
     }
 
-    fn handle_event(&self, window: &Window, event: Event) -> Response {
-        let cx = WindowContext::new(&window.inner.state.app, window);
-        window.inner.state.handler.borrow_mut()(&cx, event)
+    fn handle_event(&self, state: &WindowState, event: WindowEvent) -> Option<Response> {
+        let task_ref = state.handler.upgrade()?;
+        let mut handler = task_ref.try_borrow_mut().ok()?;
+        let cx = Context::new(&state.event_loop, &task_ref);
+        Some(handler.event(&cx, state.key, Event::Window(event)))
     }
 
     fn drain_events(&self) -> Result<()> {
@@ -252,12 +239,12 @@ impl AppInner {
                         };
                         let rect = rect_physical.scale(self.state.scale.recip());
 
-                        let expose_rects = &window.inner.state.expose_rects;
+                        let expose_rects = &window.expose_rects;
                         expose_rects.borrow_mut().push(rect);
 
                         if event.count == 0 {
                             let rects = expose_rects.take();
-                            self.handle_event(&window, Event::Expose(&rects));
+                            self.handle_event(&window, WindowEvent::Expose(&rects));
                         }
                     }
                 }
@@ -266,24 +253,24 @@ impl AppInner {
                         && event.data.as_data32()[0] == self.state.atoms.WM_DELETE_WINDOW
                     {
                         if let Some(window) = self.get_window(event.window) {
-                            self.handle_event(&window, Event::Close);
+                            self.handle_event(&window, WindowEvent::Close);
                         }
                     }
                 }
                 protocol::Event::EnterNotify(event) => {
                     if let Some(window) = self.get_window(event.event) {
-                        self.handle_event(&window, Event::MouseEnter);
+                        self.handle_event(&window, WindowEvent::MouseEnter);
 
                         let point = Point {
                             x: event.event_x as f64,
                             y: event.event_y as f64,
                         };
-                        self.handle_event(&window, Event::MouseMove(point));
+                        self.handle_event(&window, WindowEvent::MouseMove(point));
                     }
                 }
                 protocol::Event::LeaveNotify(event) => {
                     if let Some(window) = self.get_window(event.event) {
-                        self.handle_event(&window, Event::MouseExit);
+                        self.handle_event(&window, WindowEvent::MouseExit);
                     }
                 }
                 protocol::Event::MotionNotify(event) => {
@@ -293,28 +280,28 @@ impl AppInner {
                             y: event.event_y as f64,
                         };
 
-                        self.handle_event(&window, Event::MouseMove(point));
+                        self.handle_event(&window, WindowEvent::MouseMove(point));
                     }
                 }
                 protocol::Event::ButtonPress(event) => {
                     if let Some(window) = self.get_window(event.event) {
                         if let Some(button) = mouse_button_from_code(event.detail) {
-                            self.handle_event(&window, Event::MouseDown(button));
+                            self.handle_event(&window, WindowEvent::MouseDown(button));
                         } else if let Some(delta) = scroll_delta_from_code(event.detail) {
-                            self.handle_event(&window, Event::Scroll(delta));
+                            self.handle_event(&window, WindowEvent::Scroll(delta));
                         }
                     }
                 }
                 protocol::Event::ButtonRelease(event) => {
                     if let Some(window) = self.get_window(event.event) {
                         if let Some(button) = mouse_button_from_code(event.detail) {
-                            self.handle_event(&window, Event::MouseUp(button));
+                            self.handle_event(&window, WindowEvent::MouseUp(button));
                         }
                     }
                 }
                 protocol::Event::PresentCompleteNotify(event) => {
                     if let Some(window) = self.get_window(event.window) {
-                        self.handle_event(&window, Event::Frame);
+                        self.handle_event(&window, WindowEvent::Frame);
 
                         self.state.connection.present_notify_msc(event.window, 0, 0, 1, 0)?;
                         self.state.connection.flush()?;
@@ -339,7 +326,7 @@ impl AppInner {
     }
 }
 
-impl AsRawFd for AppInner {
+impl AsRawFd for EventLoopInner {
     fn as_raw_fd(&self) -> RawFd {
         self.state.connection.stream().as_raw_fd()
     }

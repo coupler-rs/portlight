@@ -2,7 +2,7 @@ use std::ffi::{c_ulong, c_void};
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::{backend, AppHandle, Result};
+use crate::{backend, Context, Key, Result};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point {
@@ -129,7 +129,7 @@ pub enum Cursor {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Event<'a> {
+pub enum WindowEvent<'a> {
     Expose(&'a [Rect]),
     Frame,
     Close,
@@ -141,12 +141,6 @@ pub enum Event<'a> {
     MouseDown(MouseButton),
     MouseUp(MouseButton),
     Scroll(Point),
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Response {
-    Capture,
-    Ignore,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -200,42 +194,14 @@ impl WindowOptions {
         self
     }
 
-    pub fn open<H>(&self, app: &AppHandle, handler: H) -> Result<Window>
-    where
-        H: FnMut(&WindowContext, Event) -> Response + 'static,
-    {
-        Ok(Window::from_inner(backend::WindowInner::open(
-            self, app, handler,
-        )?))
-    }
-}
-
-pub struct WindowContext<'a> {
-    app: &'a AppHandle,
-    window: &'a Window,
-    // ensure !Send and !Sync on all platforms
-    _marker: PhantomData<*mut ()>,
-}
-
-impl<'a> WindowContext<'a> {
-    pub(crate) fn new(app: &'a AppHandle, window: &'a Window) -> WindowContext<'a> {
-        WindowContext {
-            app,
-            window,
+    pub fn open(&self, context: &Context, key: Key) -> Result<Window> {
+        Ok(Window {
+            inner: backend::WindowInner::open(self, context, key)?,
             _marker: PhantomData,
-        }
-    }
-
-    pub fn app(&self) -> &AppHandle {
-        self.app
-    }
-
-    pub fn window(&self) -> &Window {
-        self.window
+        })
     }
 }
 
-#[derive(Clone)]
 pub struct Window {
     pub(crate) inner: backend::WindowInner,
     // ensure !Send and !Sync on all platforms
@@ -243,13 +209,6 @@ pub struct Window {
 }
 
 impl Window {
-    pub(crate) fn from_inner(inner: backend::WindowInner) -> Window {
-        Window {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-
     pub fn show(&self) {
         self.inner.show();
     }
@@ -282,12 +241,14 @@ impl Window {
         self.inner.set_mouse_position(position);
     }
 
-    pub fn close(&self) {
-        self.inner.close();
-    }
-
     pub fn as_raw(&self) -> Result<RawWindow> {
         self.inner.as_raw()
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        self.inner.close();
     }
 }
 

@@ -1,34 +1,9 @@
 use std::fmt;
 use std::marker::PhantomData;
+use std::time::Duration;
 
-use crate::{backend, AppHandle};
+use crate::{backend, Context, Key, Result};
 
-pub struct TimerContext<'a> {
-    app: &'a AppHandle,
-    timer: &'a Timer,
-    // ensure !Send and !Sync on all platforms
-    _marker: PhantomData<*mut ()>,
-}
-
-impl<'a> TimerContext<'a> {
-    pub(crate) fn new(app: &'a AppHandle, timer: &'a Timer) -> TimerContext<'a> {
-        TimerContext {
-            app,
-            timer,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn app(&self) -> &AppHandle {
-        self.app
-    }
-
-    pub fn timer(&self) -> &Timer {
-        self.timer
-    }
-}
-
-#[derive(Clone)]
 pub struct Timer {
     pub(crate) inner: backend::TimerInner,
     // ensure !Send and !Sync on all platforms
@@ -36,14 +11,18 @@ pub struct Timer {
 }
 
 impl Timer {
-    pub(crate) fn from_inner(inner: backend::TimerInner) -> Timer {
-        Timer {
+    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Timer> {
+        let inner = backend::TimerInner::repeat(duration, context, key)?;
+
+        Ok(Timer {
             inner,
             _marker: PhantomData,
-        }
+        })
     }
+}
 
-    pub fn cancel(&self) {
+impl Drop for Timer {
+    fn drop(&mut self) {
         self.inner.cancel();
     }
 }

@@ -13,10 +13,10 @@ use objc2_foundation::{ns_string, NSNumber};
 use core_foundation::base::{CFRelease, CFTypeRef};
 use core_foundation::runloop::*;
 
-use super::app::{AppInner, AppState};
+use super::event_loop::{EventLoopInner, EventLoopState};
 use super::ffi::display_link::*;
-use super::window::{View, WindowInner};
-use crate::{AppHandle, Event, Window, WindowContext};
+use super::window::View;
+use crate::{EventLoopHandle, WindowEvent};
 
 fn display_from_screen(screen: &NSScreen) -> Option<CGDirectDisplayID> {
     unsafe {
@@ -69,19 +69,17 @@ extern "C" fn release(info: *const c_void) {
 
 extern "C" fn perform(info: *const c_void) {
     let state = unsafe { &*(info as *mut DisplayState) };
-    let app_state = &state.app.inner.state;
+    let event_loop_state = &state.event_loop.inner.state;
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let windows: Vec<*const View> = app_state.windows.borrow().keys().copied().collect();
+        let windows: Vec<*const View> = event_loop_state.windows.borrow().keys().copied().collect();
         for ptr in windows {
-            let window_state = app_state.windows.borrow().get(&ptr).cloned();
+            let window_state = event_loop_state.windows.borrow().get(&ptr).cloned();
             if let Some(window_state) = window_state {
                 if let Some(view) = window_state.view() {
                     let display = display_from_view(&*view);
                     if display == Some(state.display_id) {
-                        let window = Window::from_inner(WindowInner::from_state(window_state));
-                        let cx = WindowContext::new(&state.app, &window);
-                        window.inner.state.handle_event(&cx, Event::Frame);
+                        window_state.handle_event(WindowEvent::Frame);
                     }
                 }
             }
@@ -89,13 +87,13 @@ extern "C" fn perform(info: *const c_void) {
     }));
 
     if let Err(panic) = result {
-        app_state.propagate_panic(panic);
+        event_loop_state.propagate_panic(panic);
     }
 }
 
 struct DisplayState {
     display_id: CGDirectDisplayID,
-    app: AppHandle,
+    event_loop: EventLoopHandle,
 }
 
 struct Display {
@@ -104,10 +102,12 @@ struct Display {
 }
 
 impl Display {
-    pub fn new(app_state: &Rc<AppState>, display_id: CGDirectDisplayID) -> Display {
+    pub fn new(event_loop_state: &Rc<EventLoopState>, display_id: CGDirectDisplayID) -> Display {
         let state = Rc::new(DisplayState {
             display_id,
-            app: AppHandle::from_inner(AppInner::from_state(Rc::clone(app_state))),
+            event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
+                event_loop_state,
+            ))),
         });
 
         let mut context = CFRunLoopSourceContext {
@@ -163,10 +163,10 @@ impl DisplayLinks {
         }
     }
 
-    pub fn init(&self, app_state: &Rc<AppState>) {
-        for screen in NSScreen::screens(app_state.mtm) {
+    pub fn init(&self, event_loop_state: &Rc<EventLoopState>) {
+        for screen in NSScreen::screens(event_loop_state.mtm) {
             if let Some(id) = display_from_screen(&*screen) {
-                self.displays.borrow_mut().insert(id, Display::new(app_state, id));
+                self.displays.borrow_mut().insert(id, Display::new(event_loop_state, id));
             }
         }
     }
