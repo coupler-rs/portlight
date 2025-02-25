@@ -23,7 +23,7 @@ use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
     Bitmap, Context, Cursor, Error, Event, EventLoopHandle, Key, MouseButton, Point, RawWindow,
-    Rect, Response, Result, Size, Task, Window, WindowEvent, WindowOptions,
+    Rect, Response, Result, Size, Task, WindowEvent, WindowOptions,
 };
 
 #[allow(non_snake_case)]
@@ -109,8 +109,7 @@ pub unsafe extern "system" fn wnd_proc(
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     }
 
-    let window = Window::from_inner(WindowInner::from_state(WindowState::from_raw(state_ptr)));
-    let state = &window.inner.state;
+    let state = WindowState::from_raw(state_ptr);
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         match msg {
@@ -281,7 +280,7 @@ pub unsafe extern "system" fn wnd_proc(
     };
 
     // If a panic occurs while dropping the Rc<WindowState>, the only thing left to do is abort.
-    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(window))) {
+    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(state))) {
         std::process::abort();
     }
 
@@ -363,10 +362,6 @@ pub struct WindowInner {
 }
 
 impl WindowInner {
-    pub fn from_state(state: Rc<WindowState>) -> WindowInner {
-        WindowInner { state }
-    }
-
     pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
         let event_loop = context.event_loop;
 
