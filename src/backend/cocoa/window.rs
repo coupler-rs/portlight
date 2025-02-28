@@ -434,10 +434,6 @@ impl WindowInner {
         autoreleasepool(|_| {
             let event_loop = context.event_loop;
 
-            if !event_loop.inner.state.open.get() {
-                return Err(Error::EventLoopDropped);
-            }
-
             let event_loop_state = &event_loop.inner.state;
 
             let parent_view = if let Some(parent) = options.parent {

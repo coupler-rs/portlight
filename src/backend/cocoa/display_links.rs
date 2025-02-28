@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use objc2::rc::Id;
 
@@ -13,10 +13,10 @@ use objc2_foundation::{ns_string, NSNumber};
 use core_foundation::base::{CFRelease, CFTypeRef};
 use core_foundation::runloop::*;
 
-use super::event_loop::{EventLoopInner, EventLoopState};
+use super::event_loop::EventLoopState;
 use super::ffi::display_link::*;
 use super::window::View;
-use crate::{EventLoopHandle, WindowEvent};
+use crate::WindowEvent;
 
 fn display_from_screen(screen: &NSScreen) -> Option<CGDirectDisplayID> {
     unsafe {
@@ -69,7 +69,10 @@ extern "C" fn release(info: *const c_void) {
 
 extern "C" fn perform(info: *const c_void) {
     let state = unsafe { &*(info as *mut DisplayState) };
-    let event_loop_state = &state.event_loop.inner.state;
+
+    let Some(event_loop_state) = state.event_loop_state.upgrade() else {
+        return;
+    };
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         let windows: Vec<*const View> = event_loop_state.windows.borrow().keys().copied().collect();
@@ -93,7 +96,7 @@ extern "C" fn perform(info: *const c_void) {
 
 struct DisplayState {
     display_id: CGDirectDisplayID,
-    event_loop: EventLoopHandle,
+    event_loop_state: Weak<EventLoopState>,
 }
 
 struct Display {
@@ -105,9 +108,7 @@ impl Display {
     pub fn new(event_loop_state: &Rc<EventLoopState>, display_id: CGDirectDisplayID) -> Display {
         let state = Rc::new(DisplayState {
             display_id,
-            event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
-                event_loop_state,
-            ))),
+            event_loop_state: Rc::downgrade(event_loop_state),
         });
 
         let mut context = CFRunLoopSourceContext {
@@ -169,9 +170,5 @@ impl DisplayLinks {
                 self.displays.borrow_mut().insert(id, Display::new(event_loop_state, id));
             }
         }
-    }
-
-    pub fn shutdown(&self) {
-        drop(self.displays.take());
     }
 }

@@ -75,12 +75,6 @@ impl EventLoop {
     }
 }
 
-impl Drop for EventLoop {
-    fn drop(&mut self) {
-        self.handle.inner.shutdown();
-    }
-}
-
 impl fmt::Debug for EventLoop {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("EventLoop").finish_non_exhaustive()

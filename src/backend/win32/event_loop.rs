@@ -2,7 +2,7 @@ use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::panic::{self, AssertUnwindSafe};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::{mem, ptr};
 
 use windows::core::PCWSTR;
@@ -61,9 +61,13 @@ pub unsafe extern "system" fn message_wnd_proc(
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     }
 
-    let event_loop_state_rc = Rc::from_raw(event_loop_state_ptr);
-    let event_loop_state = Rc::clone(&event_loop_state_rc);
-    let _ = Rc::into_raw(event_loop_state_rc);
+    let event_loop_state_weak = Weak::from_raw(event_loop_state_ptr);
+    let event_loop_state = event_loop_state_weak.clone();
+    let _ = event_loop_state_weak.into_raw();
+
+    let Some(event_loop_state) = event_loop_state.upgrade() else {
+        return DefWindowProcW(hwnd, msg, wparam, lparam);
+    };
 
     let event_loop = EventLoopHandle::from_inner(EventLoopInner::from_state(event_loop_state));
 
@@ -120,7 +124,6 @@ impl<'a> Drop for RunGuard<'a> {
 }
 
 pub struct EventLoopState {
-    pub open: Cell<bool>,
     pub running: Cell<bool>,
     pub panic: Cell<Option<Box<dyn Any + Send>>>,
     pub message_class: PCWSTR,
@@ -140,6 +143,19 @@ impl EventLoopState {
             unsafe { PostQuitMessage(0) };
         } else {
             std::process::abort();
+        }
+    }
+}
+
+impl Drop for EventLoopState {
+    fn drop(&mut self) {
+        unsafe { window::unregister_class(self.window_class) };
+
+        self.vsync_threads.join_all();
+
+        unsafe {
+            let _ = DestroyWindow(self.message_hwnd);
+            unregister_message_class(self.message_class);
         }
     }
 }
@@ -189,7 +205,6 @@ impl EventLoopInner {
         let vsync_threads = VsyncThreads::new();
 
         let state = Rc::new(EventLoopState {
-            open: Cell::new(true),
             running: Cell::new(false),
             panic: Cell::new(None),
             message_class,
@@ -201,7 +216,7 @@ impl EventLoopInner {
             windows: RefCell::new(HashMap::new()),
         });
 
-        let state_ptr = Rc::into_raw(Rc::clone(&state));
+        let state_ptr = Weak::into_raw(Rc::downgrade(&state));
         unsafe {
             SetWindowLongPtrW(message_hwnd, msg::GWLP_USERDATA, state_ptr as isize);
         }
@@ -212,10 +227,6 @@ impl EventLoopInner {
     }
 
     pub fn run(&self) -> Result<()> {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
         let _run_guard = RunGuard::new(&self.state.running)?;
 
         let result = loop {
@@ -249,10 +260,6 @@ impl EventLoopInner {
     }
 
     pub fn poll(&self) -> Result<()> {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
         let _run_guard = RunGuard::new(&self.state.running)?;
 
         loop {
@@ -278,23 +285,5 @@ impl EventLoopInner {
         }
 
         Ok(())
-    }
-
-    pub fn shutdown(&self) {
-        self.state.open.set(false);
-
-        for window_state in self.state.windows.take().into_values() {
-            window_state.close();
-        }
-        unsafe { window::unregister_class(self.state.window_class) };
-
-        self.state.timers.shutdown();
-
-        self.state.vsync_threads.join_all();
-
-        unsafe {
-            let _ = DestroyWindow(self.state.message_hwnd);
-            unregister_message_class(self.state.message_class);
-        }
     }
 }

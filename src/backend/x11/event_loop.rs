@@ -78,7 +78,6 @@ impl<'a> Drop for RunGuard<'a> {
 }
 
 pub struct EventLoopState {
-    pub open: Cell<bool>,
     pub run_state: Cell<RunState>,
     pub connection: RustConnection,
     pub screen_index: usize,
@@ -128,7 +127,6 @@ impl EventLoopInner {
         };
 
         let state = Rc::new(EventLoopState {
-            open: Cell::new(true),
             run_state: Cell::new(RunState::Stopped),
             connection,
             screen_index,
@@ -149,10 +147,6 @@ impl EventLoopInner {
     }
 
     pub fn run(&self) -> Result<()> {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
         let _run_guard = RunGuard::new(&self.state.run_state)?;
 
         let fd = self.as_raw_fd();
@@ -190,10 +184,6 @@ impl EventLoopInner {
     }
 
     pub fn poll(&self) -> Result<()> {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
         if self.state.run_state.get() != RunState::Stopped {
             return Err(Error::AlreadyRunning);
         }
@@ -312,17 +302,6 @@ impl EventLoopInner {
         }
 
         Ok(())
-    }
-
-    pub fn shutdown(&self) {
-        self.state.open.set(false);
-
-        for window_state in self.state.windows.take().into_values() {
-            window_state.close();
-        }
-        let _ = self.state.connection.flush();
-
-        self.state.timers.shutdown();
     }
 }
 

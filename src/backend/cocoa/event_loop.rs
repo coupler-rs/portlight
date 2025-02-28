@@ -42,7 +42,6 @@ impl<'a> Drop for RunGuard<'a> {
 }
 
 pub struct EventLoopState {
-    pub open: Cell<bool>,
     pub running: Cell<bool>,
     pub panic: Cell<Option<Box<dyn Any + Send>>>,
     pub class: &'static AnyClass,
@@ -127,7 +126,6 @@ impl EventLoopInner {
             };
 
             let state = Rc::new(EventLoopState {
-                open: Cell::new(true),
                 running: Cell::new(false),
                 panic: Cell::new(None),
                 class,
@@ -153,10 +151,6 @@ impl EventLoopInner {
 
     pub fn run(&self) -> Result<()> {
         autoreleasepool(|_| {
-            if !self.state.open.get() {
-                return Err(Error::EventLoopDropped);
-            }
-
             let _run_guard = RunGuard::new(&self.state.running)?;
 
             let app = NSApplication::sharedApplication(self.state.mtm);
@@ -179,10 +173,6 @@ impl EventLoopInner {
     }
 
     pub fn poll(&self) -> Result<()> {
-        if !self.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
         let _run_guard = RunGuard::new(&self.state.running)?;
 
         // TODO: poll events
@@ -192,18 +182,5 @@ impl EventLoopInner {
         }
 
         Ok(())
-    }
-
-    pub fn shutdown(&self) {
-        autoreleasepool(|_| {
-            self.state.open.set(false);
-
-            for window_state in self.state.windows.take().into_values() {
-                window_state.close();
-            }
-
-            self.state.timers.shutdown();
-            self.state.display_links.shutdown();
-        })
     }
 }

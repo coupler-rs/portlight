@@ -134,10 +134,6 @@ impl WindowInner {
     pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
         let event_loop = context.event_loop;
 
-        if !event_loop.inner.state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
-
         let event_loop_state = &event_loop.inner.state;
         let connection = &event_loop_state.connection;
 

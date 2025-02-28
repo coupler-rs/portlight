@@ -6,7 +6,7 @@ use std::time::Duration;
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
 use super::event_loop::EventLoopState;
-use crate::{Context, Error, Event, EventLoopHandle, Key, Result, Task};
+use crate::{Context, Event, EventLoopHandle, Key, Result, Task};
 
 struct TimerState {
     timer_id: Cell<Option<usize>>,
@@ -47,12 +47,6 @@ impl Timers {
 
         Some(())
     }
-
-    pub fn shutdown(&self) {
-        for timer in self.timers.take().into_values() {
-            timer.cancel();
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -63,10 +57,6 @@ pub struct TimerInner {
 impl TimerInner {
     pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<TimerInner> {
         let event_loop_state = &context.event_loop.inner.state;
-
-        if !event_loop_state.open.get() {
-            return Err(Error::EventLoopDropped);
-        }
 
         let timer_id = event_loop_state.timers.next_id.get();
         event_loop_state.timers.next_id.set(timer_id + 1);
