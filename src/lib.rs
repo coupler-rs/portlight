@@ -6,7 +6,7 @@ mod timer;
 mod window;
 
 pub use error::{Error, Result};
-pub use event_loop::{EventLoop, EventLoopHandle, EventLoopMode, EventLoopOptions};
+pub use event_loop::{EventLoop, EventLoopMode, EventLoopOptions};
 pub use task::{Context, Event, Key, Response, Task, TaskHandle};
 pub use timer::Timer;
 pub use window::{

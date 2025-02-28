@@ -11,7 +11,7 @@ use core_foundation::date::CFAbsoluteTimeGetCurrent;
 use core_foundation::runloop::*;
 
 use super::event_loop::EventLoopInner;
-use crate::{Context, Event, EventLoopHandle, Key, Result, Task};
+use crate::{Context, Event, EventLoop, Key, Result, Task};
 
 extern "C" fn retain(info: *const c_void) -> *const c_void {
     unsafe { Rc::increment_strong_count(info as *const TimerState) };
@@ -44,7 +44,7 @@ extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
 
 struct TimerState {
     timer_ref: Cell<Option<CFRunLoopTimerRef>>,
-    event_loop: EventLoopHandle,
+    event_loop: EventLoop,
     handler: Weak<RefCell<dyn Task>>,
     key: Key,
 }
@@ -91,7 +91,7 @@ impl TimerInner {
 
         let state = Rc::new(TimerState {
             timer_ref: Cell::new(None),
-            event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
+            event_loop: EventLoop::from_inner(EventLoopInner::from_state(Rc::clone(
                 event_loop_state,
             ))),
             handler: Rc::downgrade(context.task),

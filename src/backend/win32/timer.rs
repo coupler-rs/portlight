@@ -6,7 +6,7 @@ use std::time::Duration;
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
 use super::event_loop::EventLoopState;
-use crate::{Context, Event, EventLoopHandle, Key, Result, Task};
+use crate::{Context, Event, EventLoop, Key, Result, Task};
 
 struct TimerState {
     timer_id: Cell<Option<usize>>,
@@ -36,7 +36,7 @@ impl Timers {
         }
     }
 
-    pub fn handle_timer(&self, event_loop: &EventLoopHandle, timer_id: usize) -> Option<()> {
+    pub fn handle_timer(&self, event_loop: &EventLoop, timer_id: usize) -> Option<()> {
         let timer_state = event_loop.inner.state.timers.timers.borrow().get(&timer_id).cloned();
         if let Some(timer_state) = timer_state {
             let task_ref = timer_state.handler.upgrade()?;

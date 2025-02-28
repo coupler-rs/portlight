@@ -37,8 +37,9 @@ impl EventLoopOptions {
     }
 }
 
+#[derive(Clone)]
 pub struct EventLoop {
-    handle: EventLoopHandle,
+    pub(crate) inner: backend::EventLoopInner,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
@@ -46,7 +47,7 @@ pub struct EventLoop {
 impl EventLoop {
     pub(crate) fn from_inner(inner: backend::EventLoopInner) -> EventLoop {
         EventLoop {
-            handle: EventLoopHandle::from_inner(inner),
+            inner,
             _marker: PhantomData,
         }
     }
@@ -55,23 +56,23 @@ impl EventLoop {
         EventLoopOptions::default().build()
     }
 
-    pub fn handle(&self) -> &EventLoopHandle {
-        &self.handle
-    }
-
     pub fn spawn<T>(&self, task: T) -> TaskHandle<T>
     where
         T: Task + 'static,
     {
-        TaskHandle::spawn(&self.handle, task)
+        TaskHandle::spawn(&self, task)
     }
 
     pub fn run(&self) -> Result<()> {
-        self.handle.inner.run()
+        self.inner.run()
     }
 
     pub fn poll(&self) -> Result<()> {
-        self.handle.inner.poll()
+        self.inner.poll()
+    }
+
+    pub fn exit(&self) {
+        self.inner.exit();
     }
 }
 
@@ -87,32 +88,6 @@ use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(target_os = "linux")]
 impl AsRawFd for EventLoop {
     fn as_raw_fd(&self) -> RawFd {
-        self.handle.inner.as_raw_fd()
-    }
-}
-
-#[derive(Clone)]
-pub struct EventLoopHandle {
-    pub(crate) inner: backend::EventLoopInner,
-    // ensure !Send and !Sync on all platforms
-    _marker: PhantomData<*mut ()>,
-}
-
-impl EventLoopHandle {
-    pub(crate) fn from_inner(inner: backend::EventLoopInner) -> EventLoopHandle {
-        EventLoopHandle {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-
-    pub fn exit(&self) {
-        self.inner.exit();
-    }
-}
-
-impl fmt::Debug for EventLoopHandle {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("EventLoopHandle").finish_non_exhaustive()
+        self.inner.as_raw_fd()
     }
 }

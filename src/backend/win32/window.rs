@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
-    Bitmap, Context, Cursor, Error, Event, EventLoopHandle, Key, MouseButton, Point, RawWindow,
+    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow,
     Rect, Response, Result, Size, Task, WindowEvent, WindowOptions,
 };
 
@@ -296,7 +296,7 @@ pub struct WindowState {
     mouse_down_count: Cell<isize>,
     mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
-    event_loop: EventLoopHandle,
+    event_loop: EventLoop,
     handler: Weak<RefCell<dyn Task>>,
     key: Key,
 }

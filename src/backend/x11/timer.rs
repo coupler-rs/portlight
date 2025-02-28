@@ -5,14 +5,14 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use super::event_loop::EventLoopInner;
-use crate::{Context, Event, EventLoopHandle, Key, Result, Task};
+use crate::{Context, Event, EventLoop, Key, Result, Task};
 
 pub type TimerId = usize;
 
 struct TimerState {
     timer_id: TimerId,
     duration: Duration,
-    event_loop: EventLoopHandle,
+    event_loop: EventLoop,
     handler: Weak<RefCell<dyn Task>>,
     key: Key,
 }
@@ -113,7 +113,7 @@ impl TimerInner {
         let state = Rc::new(TimerState {
             timer_id,
             duration,
-            event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
+            event_loop: EventLoop::from_inner(EventLoopInner::from_state(Rc::clone(
                 event_loop_state,
             ))),
             handler: Rc::downgrade(context.task),

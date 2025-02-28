@@ -4,10 +4,10 @@ use std::rc::Rc;
 use std::{error, fmt};
 
 use crate::window::WindowEvent;
-use crate::EventLoopHandle;
+use crate::EventLoop;
 
 pub struct Context<'a> {
-    pub(crate) event_loop: &'a EventLoopHandle,
+    pub(crate) event_loop: &'a EventLoop,
     pub(crate) task: &'a Rc<RefCell<dyn Task>>,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
@@ -15,7 +15,7 @@ pub struct Context<'a> {
 
 impl Context<'_> {
     pub(crate) fn new<'a>(
-        event_loop: &'a EventLoopHandle,
+        event_loop: &'a EventLoop,
         task: &'a Rc<RefCell<dyn Task>>,
     ) -> Context<'a> {
         Context {
@@ -25,7 +25,7 @@ impl Context<'_> {
         }
     }
 
-    pub fn event_loop(&self) -> &EventLoopHandle {
+    pub fn event_loop(&self) -> &EventLoop {
         self.event_loop
     }
 }
@@ -49,14 +49,14 @@ pub trait Task {
 }
 
 pub struct TaskHandle<T> {
-    event_loop: EventLoopHandle,
+    event_loop: EventLoop,
     task: Rc<RefCell<T>>,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
 
 impl<T: Task + 'static> TaskHandle<T> {
-    pub(crate) fn spawn(event_loop: &EventLoopHandle, task: T) -> TaskHandle<T> {
+    pub(crate) fn spawn(event_loop: &EventLoop, task: T) -> TaskHandle<T> {
         TaskHandle {
             event_loop: event_loop.clone(),
             task: Rc::new(RefCell::new(task)),

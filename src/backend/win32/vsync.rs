@@ -13,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use super::event_loop::EventLoopState;
 use super::WM_USER_VBLANK;
-use crate::{EventLoopHandle, WindowEvent};
+use crate::{EventLoop, WindowEvent};
 
 struct ThreadState {
     pending: AtomicBool,
@@ -94,7 +94,7 @@ impl VsyncThreads {
         }
     }
 
-    pub fn handle_vblank(&self, event_loop: &EventLoopHandle, monitor: HMONITOR) {
+    pub fn handle_vblank(&self, event_loop: &EventLoop, monitor: HMONITOR) {
         let windows: Vec<isize> = event_loop.inner.state.windows.borrow().keys().copied().collect();
         for hwnd in windows {
             let window_monitor = unsafe { MonitorFromWindow(HWND(hwnd), MONITOR_DEFAULTTONEAREST) };

@@ -15,7 +15,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::event_loop::{EventLoopInner, EventLoopState};
 use super::OsError;
 use crate::{
-    Bitmap, Context, Cursor, Error, EventLoopHandle, Key, Point, RawWindow, Rect, Result, Size,
+    Bitmap, Context, Cursor, Error, EventLoop, Key, Point, RawWindow, Rect, Result, Size,
     Task, WindowOptions,
 };
 
@@ -37,7 +37,7 @@ pub struct WindowState {
     pub shm_state: RefCell<Option<ShmState>>,
     pub present_state: RefCell<Option<PresentState>>,
     pub expose_rects: RefCell<Vec<Rect>>,
-    pub event_loop: EventLoopHandle,
+    pub event_loop: EventLoop,
     pub handler: Weak<RefCell<dyn Task>>,
     pub key: Key,
 }
@@ -230,7 +230,7 @@ impl WindowInner {
             shm_state: RefCell::new(shm_state),
             present_state: RefCell::new(present_state),
             expose_rects: RefCell::new(Vec::new()),
-            event_loop: EventLoopHandle::from_inner(EventLoopInner::from_state(Rc::clone(
+            event_loop: EventLoop::from_inner(EventLoopInner::from_state(Rc::clone(
                 &event_loop_state,
             ))),
             handler: Rc::downgrade(context.task),

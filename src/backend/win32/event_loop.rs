@@ -20,7 +20,7 @@ use super::timer::Timers;
 use super::vsync::VsyncThreads;
 use super::window::{self, WindowState};
 use super::{class_name, hinstance, to_wstring, WM_USER_VBLANK};
-use crate::{Error, EventLoopHandle, EventLoopMode, EventLoopOptions, Result};
+use crate::{Error, EventLoop, EventLoopMode, EventLoopOptions, Result};
 
 fn register_message_class() -> Result<PCWSTR> {
     let class_name = to_wstring(&class_name("message-"));
@@ -69,7 +69,7 @@ pub unsafe extern "system" fn message_wnd_proc(
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     };
 
-    let event_loop = EventLoopHandle::from_inner(EventLoopInner::from_state(event_loop_state));
+    let event_loop = EventLoop::from_inner(EventLoopInner::from_state(event_loop_state));
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| match msg {
         msg::WM_TIMER => {

@@ -22,7 +22,7 @@ use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString};
 use super::surface::Surface;
 use super::OsError;
 use crate::{
-    Bitmap, Context, Cursor, Error, Event, EventLoopHandle, Key, MouseButton, Point, RawWindow,
+    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow,
     Rect, Response, Result, Size, Task, WindowEvent, WindowOptions,
 };
 
@@ -356,7 +356,7 @@ pub struct WindowState {
     window: RefCell<Option<Id<NSWindow>>>,
     surface: RefCell<Option<Surface>>,
     cursor: Cell<Cursor>,
-    event_loop: EventLoopHandle,
+    event_loop: EventLoop,
     handler: Weak<RefCell<dyn Task>>,
     key: Key,
 }
