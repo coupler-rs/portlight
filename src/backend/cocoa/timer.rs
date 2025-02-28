@@ -31,16 +31,13 @@ extern "C" fn release(info: *const c_void) {
 }
 
 extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let state_rc = unsafe { Rc::from_raw(info as *const TimerState) };
-        let state = Rc::clone(&state_rc);
-        let _ = Rc::into_raw(state_rc);
+    let state = unsafe { &*(info as *mut TimerState) };
 
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
         state.handle_timer();
     }));
 
     if let Err(panic) = result {
-        let state = unsafe { &*(info as *const TimerState) };
         state.event_loop.inner.state.propagate_panic(panic);
     }
 }
