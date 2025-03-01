@@ -22,8 +22,8 @@ use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString};
 use super::surface::Surface;
 use super::OsError;
 use crate::{
-    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow,
-    Rect, Response, Result, Size, Task, WindowEvent, WindowOptions,
+    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow, Rect,
+    Response, Result, Size, Task, WindowEvent, WindowOptions,
 };
 
 fn class_name() -> String {

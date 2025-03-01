@@ -15,8 +15,8 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::event_loop::{EventLoopInner, EventLoopState};
 use super::OsError;
 use crate::{
-    Bitmap, Context, Cursor, Error, EventLoop, Key, Point, RawWindow, Rect, Result, Size,
-    Task, WindowOptions,
+    Bitmap, Context, Cursor, Error, EventLoop, Key, Point, RawWindow, Rect, Result, Size, Task,
+    WindowOptions,
 };
 
 pub struct ShmState {

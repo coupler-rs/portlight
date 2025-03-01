@@ -22,8 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
-    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow,
-    Rect, Response, Result, Size, Task, WindowEvent, WindowOptions,
+    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow, Rect,
+    Response, Result, Size, Task, WindowEvent, WindowOptions,
 };
 
 #[allow(non_snake_case)]
