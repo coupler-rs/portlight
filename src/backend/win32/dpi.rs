@@ -25,7 +25,7 @@ macro_rules! c_str {
 #[allow(non_snake_case)]
 pub struct DpiFns {
     pub SetProcessDPIAware: Option<unsafe extern "system" fn() -> BOOL>,
-    pub IsProcessDPIAware: Option<unsafe extern "system" fn() -> BOOL>,
+    pub _IsProcessDPIAware: Option<unsafe extern "system" fn() -> BOOL>,
     pub SetProcessDpiAwareness:
         Option<unsafe extern "system" fn(value: PROCESS_DPI_AWARENESS) -> HRESULT>,
     pub SetProcessDpiAwarenessContext:
@@ -40,7 +40,7 @@ pub struct DpiFns {
     >,
     pub GetDpiForWindow: Option<unsafe extern "system" fn(hwnd: HWND) -> u32>,
     pub EnableNonClientDpiScaling: Option<unsafe extern "system" fn(hwnd: HWND) -> BOOL>,
-    pub AdjustWindowRectExForDpi: Option<
+    pub _AdjustWindowRectExForDpi: Option<
         unsafe extern "system" fn(
             lprect: *mut RECT,
             dwstyle: WINDOW_STYLE,
@@ -69,13 +69,13 @@ impl DpiFns {
 
             DpiFns {
                 SetProcessDPIAware: load!(user32, "SetProcessDPIAware"),
-                IsProcessDPIAware: load!(user32, "IsProcessDPIAware"),
+                _IsProcessDPIAware: load!(user32, "IsProcessDPIAware"),
                 SetProcessDpiAwareness: load!(shcore, "SetProcessDpiAwareness"),
                 SetProcessDpiAwarenessContext: load!(user32, "SetProcessDpiAwarenessContext"),
                 GetDpiForMonitor: load!(shcore, "GetDpiForMonitor"),
                 GetDpiForWindow: load!(user32, "GetDpiForWindow"),
                 EnableNonClientDpiScaling: load!(user32, "EnableNonClientDpiScaling"),
-                AdjustWindowRectExForDpi: load!(user32, "AdjustWindowRectExForDpi"),
+                _AdjustWindowRectExForDpi: load!(user32, "AdjustWindowRectExForDpi"),
             }
         }
     }
