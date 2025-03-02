@@ -7,7 +7,7 @@ use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
 use crate::{Context, Event, EventLoop, Key, Result, Task};
 
-struct TimerState {
+pub struct TimerState {
     timer_id: Cell<Option<usize>>,
     event_loop: EventLoop,
     handler: Weak<RefCell<dyn Task>>,
@@ -15,8 +15,33 @@ struct TimerState {
 }
 
 impl TimerState {
-    fn cancel(&self) {
+    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Rc<TimerState>> {
+        let event_loop = context.event_loop;
+        let timers = &event_loop.state.timers;
+
+        let timer_id = timers.next_id.get();
+        timers.next_id.set(timer_id + 1);
+
+        let state = Rc::new(TimerState {
+            timer_id: Cell::new(Some(timer_id)),
+            event_loop: event_loop.clone(),
+            handler: Rc::downgrade(context.task),
+            key,
+        });
+
+        timers.timers.borrow_mut().insert(timer_id, Rc::clone(&state));
+
+        unsafe {
+            let millis = duration.as_millis() as u32;
+            SetTimer(event_loop.state.message_hwnd, timer_id, millis, None);
+        }
+
+        Ok(state)
+    }
+
+    pub fn cancel(&self) {
         if let Some(timer_id) = self.timer_id.take() {
+            self.event_loop.state.timers.timers.borrow_mut().remove(&timer_id);
             let _ = unsafe { KillTimer(self.event_loop.state.message_hwnd, timer_id) };
         }
     }
@@ -45,44 +70,5 @@ impl Timers {
         }
 
         Some(())
-    }
-}
-
-#[derive(Clone)]
-pub struct TimerInner {
-    state: Rc<TimerState>,
-}
-
-impl TimerInner {
-    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<TimerInner> {
-        let event_loop = context.event_loop;
-        let timers = &event_loop.state.timers;
-
-        let timer_id = timers.next_id.get();
-        timers.next_id.set(timer_id + 1);
-
-        let state = Rc::new(TimerState {
-            timer_id: Cell::new(Some(timer_id)),
-            event_loop: event_loop.clone(),
-            handler: Rc::downgrade(context.task),
-            key,
-        });
-
-        timers.timers.borrow_mut().insert(timer_id, Rc::clone(&state));
-
-        unsafe {
-            let millis = duration.as_millis() as u32;
-            SetTimer(event_loop.state.message_hwnd, timer_id, millis, None);
-        }
-
-        Ok(TimerInner { state })
-    }
-
-    pub fn cancel(&self) {
-        if let Some(timer_id) = self.state.timer_id.get() {
-            self.state.event_loop.state.timers.timers.borrow_mut().remove(&timer_id);
-        }
-
-        self.state.cancel();
     }
 }

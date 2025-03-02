@@ -41,7 +41,7 @@ extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
     }
 }
 
-struct TimerState {
+pub struct TimerState {
     timer_ref: Cell<Option<CFRunLoopTimerRef>>,
     event_loop: EventLoop,
     handler: Weak<RefCell<dyn Task>>,
@@ -57,35 +57,7 @@ impl TimerState {
         Some(())
     }
 
-    fn cancel(&self) {
-        if let Some(timer_ref) = self.timer_ref.take() {
-            unsafe {
-                CFRunLoopTimerInvalidate(timer_ref);
-                CFRelease(timer_ref as CFTypeRef);
-            }
-        }
-    }
-}
-
-pub struct Timers {
-    timers: RefCell<HashMap<CFRunLoopTimerRef, Rc<TimerState>>>,
-}
-
-impl Timers {
-    pub fn new() -> Timers {
-        Timers {
-            timers: RefCell::new(HashMap::new()),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct TimerInner {
-    state: Rc<TimerState>,
-}
-
-impl TimerInner {
-    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<TimerInner> {
+    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Rc<TimerState>> {
         let event_loop_state = &context.event_loop.state;
 
         let state = Rc::new(TimerState {
@@ -126,14 +98,29 @@ impl TimerInner {
             CFRunLoopAddTimer(run_loop, timer_ref, kCFRunLoopCommonModes);
         }
 
-        Ok(TimerInner { state })
+        Ok(state)
     }
 
     pub fn cancel(&self) {
-        if let Some(timer_ref) = self.state.timer_ref.get() {
-            self.state.event_loop.state.timers.timers.borrow_mut().remove(&timer_ref);
-        }
+        if let Some(timer_ref) = self.timer_ref.take() {
+            self.event_loop.state.timers.timers.borrow_mut().remove(&timer_ref);
 
-        self.state.cancel();
+            unsafe {
+                CFRunLoopTimerInvalidate(timer_ref);
+                CFRelease(timer_ref as CFTypeRef);
+            }
+        }
+    }
+}
+
+pub struct Timers {
+    timers: RefCell<HashMap<CFRunLoopTimerRef, Rc<TimerState>>>,
+}
+
+impl Timers {
+    pub fn new() -> Timers {
+        Timers {
+            timers: RefCell::new(HashMap::new()),
+        }
     }
 }

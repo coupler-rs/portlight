@@ -8,7 +8,7 @@ use crate::{Context, Event, EventLoop, Key, Result, Task};
 
 pub type TimerId = usize;
 
-struct TimerState {
+pub struct TimerState {
     timer_id: TimerId,
     duration: Duration,
     event_loop: EventLoop,
@@ -23,6 +23,37 @@ impl TimerState {
         let cx = Context::new(&self.event_loop, &task_ref);
         handler.event(&cx, self.key, Event::Timer);
         Some(())
+    }
+
+    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Rc<TimerState>> {
+        let event_loop_state = &context.event_loop.state;
+
+        let now = Instant::now();
+
+        let timer_id = event_loop_state.timers.next_id.get();
+        event_loop_state.timers.next_id.set(timer_id + 1);
+
+        let state = Rc::new(TimerState {
+            timer_id,
+            duration,
+            event_loop: context.event_loop.clone(),
+            handler: Rc::downgrade(context.task),
+            key,
+        });
+
+        event_loop_state.timers.timers.borrow_mut().insert(timer_id, Rc::clone(&state));
+
+        event_loop_state.timers.queue.borrow_mut().push(QueueEntry {
+            time: now + duration,
+            timer_id,
+        });
+
+        Ok(state)
+    }
+
+    pub fn cancel(&self) {
+        let timers = &self.event_loop.state.timers;
+        timers.timers.borrow_mut().remove(&self.timer_id);
     }
 }
 
@@ -92,43 +123,5 @@ impl Timers {
                 })
             }
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct TimerInner {
-    state: Rc<TimerState>,
-}
-
-impl TimerInner {
-    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<TimerInner> {
-        let event_loop_state = &context.event_loop.state;
-
-        let now = Instant::now();
-
-        let timer_id = event_loop_state.timers.next_id.get();
-        event_loop_state.timers.next_id.set(timer_id + 1);
-
-        let state = Rc::new(TimerState {
-            timer_id,
-            duration,
-            event_loop: context.event_loop.clone(),
-            handler: Rc::downgrade(context.task),
-            key,
-        });
-
-        event_loop_state.timers.timers.borrow_mut().insert(timer_id, Rc::clone(&state));
-
-        event_loop_state.timers.queue.borrow_mut().push(QueueEntry {
-            time: now + duration,
-            timer_id,
-        });
-
-        Ok(TimerInner { state })
-    }
-
-    pub fn cancel(&self) {
-        let timers = &self.state.event_loop.state.timers;
-        timers.timers.borrow_mut().remove(&self.state.timer_id);
     }
 }

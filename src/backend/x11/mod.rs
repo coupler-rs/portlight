@@ -5,5 +5,5 @@ mod window;
 
 pub use error::OsError;
 pub use event_loop::EventLoopState;
-pub use timer::TimerInner;
+pub use timer::TimerState;
 pub use window::WindowState;
