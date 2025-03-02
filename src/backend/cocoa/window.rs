@@ -413,24 +413,7 @@ impl WindowState {
         }
     }
 
-    pub fn close(&self) {
-        if let Some(window) = self.window.take() {
-            window.close();
-        }
-
-        if let Some(view) = self.view.take() {
-            unsafe { view.removeFromSuperview() };
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct WindowInner {
-    pub(super) state: Rc<WindowState>,
-}
-
-impl WindowInner {
-    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
+    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<Rc<WindowState>> {
         autoreleasepool(|_| {
             let event_loop = context.event_loop;
 
@@ -534,9 +517,7 @@ impl WindowInner {
                 .borrow_mut()
                 .insert(Id::as_ptr(&view), Rc::clone(&state));
 
-            let inner = WindowInner { state };
-
-            let scale = inner.scale();
+            let scale = state.scale();
 
             let surface = Surface::new(
                 (scale * options.size.width).round() as usize,
@@ -550,19 +531,19 @@ impl WindowInner {
                 surface.layer.setContentsScale(scale);
             }
 
-            inner.state.surface.replace(Some(surface));
+            state.surface.replace(Some(surface));
 
-            Ok(inner)
+            Ok(state)
         })
     }
 
     pub fn show(&self) {
         autoreleasepool(|_| {
-            if let Some(window) = self.state.window() {
+            if let Some(window) = self.window() {
                 window.orderFront(None);
             }
 
-            if let Some(view) = self.state.view() {
+            if let Some(view) = self.view() {
                 view.setHidden(false);
             }
         })
@@ -570,11 +551,11 @@ impl WindowInner {
 
     pub fn hide(&self) {
         autoreleasepool(|_| {
-            if let Some(window) = self.state.window() {
+            if let Some(window) = self.window() {
                 window.orderOut(None);
             }
 
-            if let Some(view) = self.state.view() {
+            if let Some(view) = self.view() {
                 view.setHidden(true);
             }
         })
@@ -582,7 +563,7 @@ impl WindowInner {
 
     pub fn size(&self) -> Size {
         autoreleasepool(|_| {
-            if let Some(view) = self.state.view() {
+            if let Some(view) = self.view() {
                 let frame = view.frame();
 
                 Size::new(frame.size.width, frame.size.height)
@@ -594,9 +575,9 @@ impl WindowInner {
 
     pub fn scale(&self) -> f64 {
         autoreleasepool(|_| {
-            let mtm = self.state.event_loop.state.mtm;
+            let mtm = self.event_loop.state.mtm;
 
-            if let Some(view) = self.state.view() {
+            if let Some(view) = self.view() {
                 if let Some(window) = view.window() {
                     return window.backingScaleFactor();
                 } else if let Some(screen) = NSScreen::screens(mtm).get(0) {
@@ -610,7 +591,7 @@ impl WindowInner {
 
     pub fn present(&self, bitmap: Bitmap) {
         autoreleasepool(|_| {
-            if let Some(surface) = &mut *self.state.surface.borrow_mut() {
+            if let Some(surface) = &mut *self.surface.borrow_mut() {
                 let width = surface.width;
                 let height = surface.height;
                 let copy_width = bitmap.width().min(width);
@@ -636,8 +617,8 @@ impl WindowInner {
 
     pub fn set_cursor(&self, cursor: Cursor) {
         autoreleasepool(|_| {
-            self.state.cursor.set(cursor);
-            self.state.update_cursor();
+            self.cursor.set(cursor);
+            self.update_cursor();
         })
     }
 
@@ -645,16 +626,19 @@ impl WindowInner {
 
     pub fn close(&self) {
         autoreleasepool(|_| {
-            if let Some(view) = self.state.view.borrow().as_ref() {
-                self.state.event_loop.state.windows.borrow_mut().remove(&Id::as_ptr(view));
+            if let Some(window) = self.window.take() {
+                window.close();
             }
 
-            self.state.close();
+            if let Some(view) = self.view.take() {
+                self.event_loop.state.windows.borrow_mut().remove(&Id::as_ptr(&view));
+                unsafe { view.removeFromSuperview() };
+            }
         })
     }
 
     pub fn as_raw(&self) -> Result<RawWindow> {
-        if let Some(view) = self.state.view.borrow().as_ref() {
+        if let Some(view) = self.view.borrow().as_ref() {
             Ok(RawWindow::Cocoa(Id::as_ptr(view) as *mut c_void))
         } else {
             Err(Error::WindowClosed)

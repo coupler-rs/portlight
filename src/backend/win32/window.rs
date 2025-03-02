@@ -332,16 +332,6 @@ impl WindowState {
         }
     }
 
-    pub fn scale(&self) -> f64 {
-        if let Some(hwnd) = self.hwnd.get() {
-            let dpi = unsafe { self.event_loop.state.dpi.dpi_for_window(hwnd) };
-
-            dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64
-        } else {
-            1.0
-        }
-    }
-
     pub fn handle_event(&self, event: WindowEvent) -> Option<Response> {
         let task_ref = self.handler.upgrade()?;
         let mut handler = task_ref.try_borrow_mut().ok()?;
@@ -349,20 +339,7 @@ impl WindowState {
         Some(handler.event(&cx, self.key, Event::Window(event)))
     }
 
-    pub fn close(&self) {
-        if let Some(hwnd) = self.hwnd.take() {
-            let _ = unsafe { DestroyWindow(hwnd) };
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct WindowInner {
-    pub(super) state: Rc<WindowState>,
-}
-
-impl WindowInner {
-    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
+    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<Rc<WindowState>> {
         let event_loop = context.event_loop;
 
         unsafe {
@@ -447,24 +424,24 @@ impl WindowInner {
 
             event_loop.state.windows.borrow_mut().insert(hwnd.0, Rc::clone(&state));
 
-            Ok(WindowInner { state })
+            Ok(state)
         }
     }
 
     pub fn show(&self) {
-        if let Some(hwnd) = self.state.hwnd.get() {
+        if let Some(hwnd) = self.hwnd.get() {
             unsafe { ShowWindow(hwnd, msg::SW_SHOWNORMAL) };
         }
     }
 
     pub fn hide(&self) {
-        if let Some(hwnd) = self.state.hwnd.get() {
+        if let Some(hwnd) = self.hwnd.get() {
             unsafe { ShowWindow(hwnd, msg::SW_HIDE) };
         }
     }
 
     pub fn size(&self) -> Size {
-        if let Some(hwnd) = self.state.hwnd.get() {
+        if let Some(hwnd) = self.hwnd.get() {
             let mut rect = RECT {
                 left: 0,
                 top: 0,
@@ -486,7 +463,13 @@ impl WindowInner {
     }
 
     pub fn scale(&self) -> f64 {
-        self.state.scale()
+        if let Some(hwnd) = self.hwnd.get() {
+            let dpi = unsafe { self.event_loop.state.dpi.dpi_for_window(hwnd) };
+
+            dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64
+        } else {
+            1.0
+        }
     }
 
     pub fn present(&self, bitmap: Bitmap) {
@@ -498,7 +481,7 @@ impl WindowInner {
     }
 
     fn present_inner(&self, bitmap: Bitmap, rects: Option<&[Rect]>) {
-        if let Some(hwnd) = self.state.hwnd.get() {
+        if let Some(hwnd) = self.hwnd.get() {
             unsafe {
                 let hdc = gdi::GetDC(hwnd);
                 if hdc != gdi::HDC(0) {
@@ -592,12 +575,12 @@ impl WindowInner {
     }
 
     pub fn set_cursor(&self, cursor: Cursor) {
-        self.state.cursor.set(cursor);
-        self.state.update_cursor();
+        self.cursor.set(cursor);
+        self.update_cursor();
     }
 
     pub fn set_mouse_position(&self, position: Point) {
-        if let Some(hwnd) = self.state.hwnd.get() {
+        if let Some(hwnd) = self.hwnd.get() {
             let position_physical = position.scale(self.scale());
 
             let mut point = POINT {
@@ -612,15 +595,14 @@ impl WindowInner {
     }
 
     pub fn close(&self) {
-        if let Some(hwnd) = self.state.hwnd.get() {
-            self.state.event_loop.state.windows.borrow_mut().remove(&hwnd.0);
+        if let Some(hwnd) = self.hwnd.take() {
+            self.event_loop.state.windows.borrow_mut().remove(&hwnd.0);
+            let _ = unsafe { DestroyWindow(hwnd) };
         }
-
-        self.state.close();
     }
 
     pub fn as_raw(&self) -> Result<RawWindow> {
-        if let Some(hwnd) = self.state.hwnd.get() {
+        if let Some(hwnd) = self.hwnd.get() {
             Ok(RawWindow::Win32(hwnd.0 as *mut c_void))
         } else {
             Err(Error::WindowClosed)

@@ -1,6 +1,7 @@
 use std::ffi::{c_ulong, c_void};
 use std::fmt;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 use crate::{backend, Context, Key, Result};
 
@@ -196,59 +197,59 @@ impl WindowOptions {
 
     pub fn open(&self, context: &Context, key: Key) -> Result<Window> {
         Ok(Window {
-            inner: backend::WindowInner::open(self, context, key)?,
+            state: backend::WindowState::open(self, context, key)?,
             _marker: PhantomData,
         })
     }
 }
 
 pub struct Window {
-    pub(crate) inner: backend::WindowInner,
+    pub(crate) state: Rc<backend::WindowState>,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
 
 impl Window {
     pub fn show(&self) {
-        self.inner.show();
+        self.state.show();
     }
 
     pub fn hide(&self) {
-        self.inner.hide();
+        self.state.hide();
     }
 
     pub fn size(&self) -> Size {
-        self.inner.size()
+        self.state.size()
     }
 
     pub fn scale(&self) -> f64 {
-        self.inner.scale()
+        self.state.scale()
     }
 
     pub fn present(&self, bitmap: Bitmap) {
-        self.inner.present(bitmap);
+        self.state.present(bitmap);
     }
 
     pub fn present_partial(&self, bitmap: Bitmap, rects: &[Rect]) {
-        self.inner.present_partial(bitmap, rects);
+        self.state.present_partial(bitmap, rects);
     }
 
     pub fn set_cursor(&self, cursor: Cursor) {
-        self.inner.set_cursor(cursor);
+        self.state.set_cursor(cursor);
     }
 
     pub fn set_mouse_position(&self, position: Point) {
-        self.inner.set_mouse_position(position);
+        self.state.set_mouse_position(position);
     }
 
     pub fn as_raw(&self) -> Result<RawWindow> {
-        self.inner.as_raw()
+        self.state.as_raw()
     }
 }
 
 impl Drop for Window {
     fn drop(&mut self) {
-        self.inner.close();
+        self.state.close();
     }
 }
 

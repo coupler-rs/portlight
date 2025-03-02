@@ -14,7 +14,7 @@ mod window;
 
 pub use event_loop::EventLoopState;
 pub use timer::TimerInner;
-pub use window::WindowInner;
+pub use window::WindowState;
 
 use crate::Error;
 
