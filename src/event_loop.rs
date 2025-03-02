@@ -33,7 +33,10 @@ impl EventLoopOptions {
     }
 
     pub fn build(&self) -> Result<EventLoop> {
-        Ok(EventLoop::from_inner(backend::EventLoopInner::new(self)?))
+        Ok(EventLoop {
+            inner: backend::EventLoopInner::new(self)?,
+            _marker: PhantomData,
+        })
     }
 }
 
@@ -45,13 +48,6 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    pub(crate) fn from_inner(inner: backend::EventLoopInner) -> EventLoop {
-        EventLoop {
-            inner,
-            _marker: PhantomData,
-        }
-    }
-
     pub fn new() -> Result<EventLoop> {
         EventLoopOptions::default().build()
     }

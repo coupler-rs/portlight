@@ -12,7 +12,7 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::wrapper::ConnectionExt as _;
 
-use super::event_loop::{EventLoopInner, EventLoopState};
+use super::event_loop::EventLoopState;
 use super::OsError;
 use crate::{
     Bitmap, Context, Cursor, Error, EventLoop, Key, Point, RawWindow, Rect, Result, Size, Task,
@@ -230,9 +230,7 @@ impl WindowInner {
             shm_state: RefCell::new(shm_state),
             present_state: RefCell::new(present_state),
             expose_rects: RefCell::new(Vec::new()),
-            event_loop: EventLoop::from_inner(EventLoopInner::from_state(Rc::clone(
-                &event_loop_state,
-            ))),
+            event_loop: context.event_loop.clone(),
             handler: Rc::downgrade(context.task),
             key,
         });

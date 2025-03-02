@@ -107,10 +107,6 @@ pub struct EventLoopInner {
 }
 
 impl EventLoopInner {
-    pub fn from_state(state: Rc<EventLoopState>) -> EventLoopInner {
-        EventLoopInner { state }
-    }
-
     pub fn new(_options: &EventLoopOptions) -> Result<EventLoopInner> {
         let (connection, screen_index) = x11rb::connect(None)?;
         let atoms = Atoms::new(&connection)?.reply()?;

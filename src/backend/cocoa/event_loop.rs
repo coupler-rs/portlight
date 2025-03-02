@@ -102,10 +102,6 @@ pub struct EventLoopInner {
 }
 
 impl EventLoopInner {
-    pub fn from_state(state: Rc<EventLoopState>) -> EventLoopInner {
-        EventLoopInner { state }
-    }
-
     pub fn new(options: &EventLoopOptions) -> Result<EventLoopInner> {
         autoreleasepool(|_| {
             let mtm =

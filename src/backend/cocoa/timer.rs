@@ -10,7 +10,6 @@ use core_foundation::base::{CFRelease, CFTypeRef};
 use core_foundation::date::CFAbsoluteTimeGetCurrent;
 use core_foundation::runloop::*;
 
-use super::event_loop::EventLoopInner;
 use crate::{Context, Event, EventLoop, Key, Result, Task};
 
 extern "C" fn retain(info: *const c_void) -> *const c_void {
@@ -91,9 +90,7 @@ impl TimerInner {
 
         let state = Rc::new(TimerState {
             timer_ref: Cell::new(None),
-            event_loop: EventLoop::from_inner(EventLoopInner::from_state(Rc::clone(
-                event_loop_state,
-            ))),
+            event_loop: context.event_loop.clone(),
             handler: Rc::downgrade(context.task),
             key,
         });

@@ -4,7 +4,6 @@ use std::collections::{BinaryHeap, HashMap};
 use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
-use super::event_loop::EventLoopInner;
 use crate::{Context, Event, EventLoop, Key, Result, Task};
 
 pub type TimerId = usize;
@@ -113,9 +112,7 @@ impl TimerInner {
         let state = Rc::new(TimerState {
             timer_id,
             duration,
-            event_loop: EventLoop::from_inner(EventLoopInner::from_state(Rc::clone(
-                event_loop_state,
-            ))),
+            event_loop: context.event_loop.clone(),
             handler: Rc::downgrade(context.task),
             key,
         });
