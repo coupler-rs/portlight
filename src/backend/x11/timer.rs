@@ -102,7 +102,7 @@ pub struct TimerInner {
 
 impl TimerInner {
     pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<TimerInner> {
-        let event_loop_state = &context.event_loop.inner.state;
+        let event_loop_state = &context.event_loop.state;
 
         let now = Instant::now();
 
@@ -128,7 +128,7 @@ impl TimerInner {
     }
 
     pub fn cancel(&self) {
-        let timers = &self.state.event_loop.inner.state.timers;
+        let timers = &self.state.event_loop.state.timers;
         timers.timers.borrow_mut().remove(&self.state.timer_id);
     }
 }

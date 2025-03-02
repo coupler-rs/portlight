@@ -179,7 +179,7 @@ impl View {
         let result = panic::catch_unwind(AssertUnwindSafe(f));
 
         if let Err(panic) = result {
-            self.state().event_loop.inner.state.propagate_panic(panic);
+            self.state().event_loop.state.propagate_panic(panic);
         }
     }
 
@@ -405,7 +405,7 @@ impl WindowState {
             Cursor::SizeNesw => try_get_cursor(sel!(_windowResizeNorthEastSouthWestCursor)),
             Cursor::SizeNwse => try_get_cursor(sel!(_windowResizeNorthWestSouthEastCursor)),
             Cursor::Wait => try_get_cursor(sel!(_waitCursor)),
-            Cursor::None => self.event_loop.inner.state.empty_cursor.clone(),
+            Cursor::None => self.event_loop.state.empty_cursor.clone(),
         };
 
         unsafe {
@@ -434,7 +434,7 @@ impl WindowInner {
         autoreleasepool(|_| {
             let event_loop = context.event_loop;
 
-            let event_loop_state = &event_loop.inner.state;
+            let event_loop_state = &event_loop.state;
 
             let parent_view = if let Some(parent) = options.parent {
                 if let RawWindow::Cocoa(parent_view) = parent {
@@ -594,7 +594,7 @@ impl WindowInner {
 
     pub fn scale(&self) -> f64 {
         autoreleasepool(|_| {
-            let mtm = self.state.event_loop.inner.state.mtm;
+            let mtm = self.state.event_loop.state.mtm;
 
             if let Some(view) = self.state.view() {
                 if let Some(window) = view.window() {
@@ -646,7 +646,7 @@ impl WindowInner {
     pub fn close(&self) {
         autoreleasepool(|_| {
             if let Some(view) = self.state.view.borrow().as_ref() {
-                self.state.event_loop.inner.state.windows.borrow_mut().remove(&Id::as_ptr(view));
+                self.state.event_loop.state.windows.borrow_mut().remove(&Id::as_ptr(view));
             }
 
             self.state.close();

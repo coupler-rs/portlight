@@ -274,7 +274,7 @@ pub unsafe extern "system" fn wnd_proc(
     let return_value = match result {
         Ok(return_value) => return_value,
         Err(panic) => {
-            state.event_loop.inner.state.propagate_panic(panic);
+            state.event_loop.state.propagate_panic(panic);
             None
         }
     };
@@ -334,7 +334,7 @@ impl WindowState {
 
     pub fn scale(&self) -> f64 {
         if let Some(hwnd) = self.hwnd.get() {
-            let dpi = unsafe { self.event_loop.inner.state.dpi.dpi_for_window(hwnd) };
+            let dpi = unsafe { self.event_loop.state.dpi.dpi_for_window(hwnd) };
 
             dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64
         } else {
@@ -391,9 +391,9 @@ impl WindowInner {
             };
 
             let dpi = if options.parent.is_some() {
-                event_loop.inner.state.dpi.dpi_for_window(parent)
+                event_loop.state.dpi.dpi_for_window(parent)
             } else {
-                event_loop.inner.state.dpi.dpi_for_primary_monitor()
+                event_loop.state.dpi.dpi_for_primary_monitor()
             };
             let scale = dpi as f64 / msg::USER_DEFAULT_SCREEN_DPI as f64;
 
@@ -416,7 +416,7 @@ impl WindowInner {
 
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
-                event_loop.inner.state.window_class,
+                event_loop.state.window_class,
                 PCWSTR(window_name.as_ptr()),
                 style,
                 x,
@@ -426,7 +426,7 @@ impl WindowInner {
                 parent,
                 HMENU(0),
                 hinstance(),
-                Some(Rc::as_ptr(&event_loop.inner.state) as *const c_void),
+                Some(Rc::as_ptr(&event_loop.state) as *const c_void),
             );
             if hwnd == HWND(0) {
                 return Err(windows::core::Error::from_win32().into());
@@ -445,7 +445,7 @@ impl WindowInner {
             let state_ptr = Rc::into_raw(Rc::clone(&state));
             SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, state_ptr as isize);
 
-            event_loop.inner.state.windows.borrow_mut().insert(hwnd.0, Rc::clone(&state));
+            event_loop.state.windows.borrow_mut().insert(hwnd.0, Rc::clone(&state));
 
             Ok(WindowInner { state })
         }
@@ -613,7 +613,7 @@ impl WindowInner {
 
     pub fn close(&self) {
         if let Some(hwnd) = self.state.hwnd.get() {
-            self.state.event_loop.inner.state.windows.borrow_mut().remove(&hwnd.0);
+            self.state.event_loop.state.windows.borrow_mut().remove(&hwnd.0);
         }
 
         self.state.close();

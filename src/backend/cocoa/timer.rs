@@ -37,7 +37,7 @@ extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
     }));
 
     if let Err(panic) = result {
-        state.event_loop.inner.state.propagate_panic(panic);
+        state.event_loop.state.propagate_panic(panic);
     }
 }
 
@@ -86,7 +86,7 @@ pub struct TimerInner {
 
 impl TimerInner {
     pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<TimerInner> {
-        let event_loop_state = &context.event_loop.inner.state;
+        let event_loop_state = &context.event_loop.state;
 
         let state = Rc::new(TimerState {
             timer_ref: Cell::new(None),
@@ -131,7 +131,7 @@ impl TimerInner {
 
     pub fn cancel(&self) {
         if let Some(timer_ref) = self.state.timer_ref.get() {
-            self.state.event_loop.inner.state.timers.timers.borrow_mut().remove(&timer_ref);
+            self.state.event_loop.state.timers.timers.borrow_mut().remove(&timer_ref);
         }
 
         self.state.cancel();

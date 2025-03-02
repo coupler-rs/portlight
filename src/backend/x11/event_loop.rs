@@ -101,13 +101,8 @@ impl Drop for EventLoopState {
     }
 }
 
-#[derive(Clone)]
-pub struct EventLoopInner {
-    pub(super) state: Rc<EventLoopState>,
-}
-
-impl EventLoopInner {
-    pub fn new(_options: &EventLoopOptions) -> Result<EventLoopInner> {
+impl EventLoopState {
+    pub fn new(_options: &EventLoopOptions) -> Result<Rc<EventLoopState>> {
         let (connection, screen_index) = x11rb::connect(None)?;
         let atoms = Atoms::new(&connection)?.reply()?;
         let shm_supported = connection.extension_information(shm::X11_EXTENSION_NAME)?.is_some();
@@ -137,22 +132,20 @@ impl EventLoopInner {
             timers: Timers::new(),
         });
 
-        let inner = EventLoopInner { state };
-
-        Ok(inner)
+        Ok(state)
     }
 
     pub fn run(&self) -> Result<()> {
-        let _run_guard = RunGuard::new(&self.state.run_state)?;
+        let _run_guard = RunGuard::new(&self.run_state)?;
 
         let fd = self.as_raw_fd();
 
         loop {
             self.drain_events()?;
-            self.state.timers.poll();
+            self.timers.poll();
             self.drain_events()?;
 
-            if self.state.run_state.get() == RunState::Exiting {
+            if self.run_state.get() == RunState::Exiting {
                 break;
             }
 
@@ -162,7 +155,7 @@ impl EventLoopInner {
                 revents: 0,
             }];
 
-            let timeout = if let Some(next_time) = self.state.timers.next_time() {
+            let timeout = if let Some(next_time) = self.timers.next_time() {
                 let duration = next_time.saturating_duration_since(Instant::now());
                 duration.as_millis() as i32
             } else {
@@ -176,25 +169,25 @@ impl EventLoopInner {
     }
 
     pub fn exit(&self) {
-        self.state.run_state.set(RunState::Exiting);
+        self.run_state.set(RunState::Exiting);
     }
 
     pub fn poll(&self) -> Result<()> {
-        if self.state.run_state.get() != RunState::Stopped {
+        if self.run_state.get() != RunState::Stopped {
             return Err(Error::AlreadyRunning);
         }
 
-        let _run_guard = RunGuard::new(&self.state.run_state)?;
+        let _run_guard = RunGuard::new(&self.run_state)?;
 
         self.drain_events()?;
-        self.state.timers.poll();
+        self.timers.poll();
         self.drain_events()?;
 
         Ok(())
     }
 
     fn get_window(&self, id: WindowId) -> Option<Rc<WindowState>> {
-        self.state.windows.borrow().get(&id).cloned()
+        self.windows.borrow().get(&id).cloned()
     }
 
     fn handle_event(&self, state: &WindowState, event: WindowEvent) -> Option<Response> {
@@ -206,11 +199,11 @@ impl EventLoopInner {
 
     fn drain_events(&self) -> Result<()> {
         loop {
-            if self.state.run_state.get() == RunState::Exiting {
+            if self.run_state.get() == RunState::Exiting {
                 break;
             }
 
-            let Some(event) = self.state.connection.poll_for_event()? else {
+            let Some(event) = self.connection.poll_for_event()? else {
                 break;
             };
 
@@ -223,7 +216,7 @@ impl EventLoopInner {
                             width: event.width as f64,
                             height: event.height as f64,
                         };
-                        let rect = rect_physical.scale(self.state.scale.recip());
+                        let rect = rect_physical.scale(self.scale.recip());
 
                         let expose_rects = &window.expose_rects;
                         expose_rects.borrow_mut().push(rect);
@@ -236,7 +229,7 @@ impl EventLoopInner {
                 }
                 protocol::Event::ClientMessage(event) => {
                     if event.format == 32
-                        && event.data.as_data32()[0] == self.state.atoms.WM_DELETE_WINDOW
+                        && event.data.as_data32()[0] == self.atoms.WM_DELETE_WINDOW
                     {
                         if let Some(window) = self.get_window(event.window) {
                             self.handle_event(&window, WindowEvent::Close);
@@ -289,8 +282,8 @@ impl EventLoopInner {
                     if let Some(window) = self.get_window(event.window) {
                         self.handle_event(&window, WindowEvent::Frame);
 
-                        self.state.connection.present_notify_msc(event.window, 0, 0, 1, 0)?;
-                        self.state.connection.flush()?;
+                        self.connection.present_notify_msc(event.window, 0, 0, 1, 0)?;
+                        self.connection.flush()?;
                     }
                 }
                 _ => {}
@@ -301,8 +294,8 @@ impl EventLoopInner {
     }
 }
 
-impl AsRawFd for EventLoopInner {
+impl AsRawFd for EventLoopState {
     fn as_raw_fd(&self) -> RawFd {
-        self.state.connection.stream().as_raw_fd()
+        self.connection.stream().as_raw_fd()
     }
 }

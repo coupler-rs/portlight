@@ -53,30 +53,6 @@ pub struct EventLoopState {
 }
 
 impl EventLoopState {
-    pub(crate) fn exit(&self) {
-        if self.running.get() {
-            let app = NSApplication::sharedApplication(self.mtm);
-            app.stop(None);
-
-            let event = unsafe {
-                // Post an NSEvent to ensure that the call to [NSApplication stop] takes effect
-                // immediately, in case we're inside a CFRunLoopTimer or CFRunLoopSource callback.
-                NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
-                    NSEventType::ApplicationDefined,
-                    NSPoint::new(0.0, 0.0),
-                    NSEventModifierFlags::empty(),
-                    0.0,
-                    0,
-                    None,
-                    0,
-                    0,
-                    0,
-                ).unwrap()
-            };
-            app.postEvent_atStart(&event, true);
-        }
-    }
-
     pub(crate) fn propagate_panic(&self, panic: Box<dyn Any + Send + 'static>) {
         // If we own the event loop, exit and propagate the panic upwards. Otherwise, just abort.
         if self.running.get() {
@@ -96,13 +72,8 @@ impl Drop for EventLoopState {
     }
 }
 
-#[derive(Clone)]
-pub struct EventLoopInner {
-    pub(super) state: Rc<EventLoopState>,
-}
-
-impl EventLoopInner {
-    pub fn new(options: &EventLoopOptions) -> Result<EventLoopInner> {
+impl EventLoopState {
+    pub fn new(options: &EventLoopOptions) -> Result<Rc<EventLoopState>> {
         autoreleasepool(|_| {
             let mtm =
                 MainThreadMarker::new().expect("EventLoop must be created on the main thread");
@@ -141,20 +112,20 @@ impl EventLoopInner {
                 app.activateIgnoringOtherApps(true);
             }
 
-            Ok(EventLoopInner { state })
+            Ok(state)
         })
     }
 
     pub fn run(&self) -> Result<()> {
         autoreleasepool(|_| {
-            let _run_guard = RunGuard::new(&self.state.running)?;
+            let _run_guard = RunGuard::new(&self.running)?;
 
-            let app = NSApplication::sharedApplication(self.state.mtm);
+            let app = NSApplication::sharedApplication(self.mtm);
             unsafe {
                 app.run();
             }
 
-            if let Some(panic) = self.state.panic.take() {
+            if let Some(panic) = self.panic.take() {
                 panic::resume_unwind(panic);
             }
 
@@ -164,16 +135,36 @@ impl EventLoopInner {
 
     pub fn exit(&self) {
         autoreleasepool(|_| {
-            self.state.exit();
+            if self.running.get() {
+                let app = NSApplication::sharedApplication(self.mtm);
+                app.stop(None);
+
+                let event = unsafe {
+                    // Post an NSEvent to ensure that the call to [NSApplication stop] takes effect
+                    // immediately, in case we're inside a CFRunLoopTimer or CFRunLoopSource callback.
+                    NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
+                        NSEventType::ApplicationDefined,
+                        NSPoint::new(0.0, 0.0),
+                        NSEventModifierFlags::empty(),
+                        0.0,
+                        0,
+                        None,
+                        0,
+                        0,
+                        0,
+                    ).unwrap()
+                };
+                app.postEvent_atStart(&event, true);
+            }
         })
     }
 
     pub fn poll(&self) -> Result<()> {
-        let _run_guard = RunGuard::new(&self.state.running)?;
+        let _run_guard = RunGuard::new(&self.running)?;
 
         // TODO: poll events
 
-        if let Some(panic) = self.state.panic.take() {
+        if let Some(panic) = self.panic.take() {
             panic::resume_unwind(panic);
         }
 

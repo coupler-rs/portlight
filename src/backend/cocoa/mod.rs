@@ -7,7 +7,7 @@ mod surface;
 mod timer;
 mod window;
 
-pub use event_loop::EventLoopInner;
+pub use event_loop::EventLoopState;
 pub use timer::TimerInner;
 pub use window::WindowInner;
 

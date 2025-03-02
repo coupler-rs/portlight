@@ -156,13 +156,8 @@ impl Drop for EventLoopState {
     }
 }
 
-#[derive(Clone)]
-pub struct EventLoopInner {
-    pub(super) state: Rc<EventLoopState>,
-}
-
-impl EventLoopInner {
-    pub fn new(options: &EventLoopOptions) -> Result<EventLoopInner> {
+impl EventLoopState {
+    pub fn new(options: &EventLoopOptions) -> Result<Rc<EventLoopState>> {
         let message_class = register_message_class()?;
 
         let message_hwnd = unsafe {
@@ -215,11 +210,11 @@ impl EventLoopInner {
 
         state.vsync_threads.init(&state);
 
-        Ok(EventLoopInner { state })
+        Ok(state)
     }
 
     pub fn run(&self) -> Result<()> {
-        let _run_guard = RunGuard::new(&self.state.running)?;
+        let _run_guard = RunGuard::new(&self.running)?;
 
         let result = loop {
             unsafe {
@@ -238,7 +233,7 @@ impl EventLoopInner {
             }
         };
 
-        if let Some(panic) = self.state.panic.take() {
+        if let Some(panic) = self.panic.take() {
             panic::resume_unwind(panic);
         }
 
@@ -246,13 +241,13 @@ impl EventLoopInner {
     }
 
     pub fn exit(&self) {
-        if self.state.running.get() {
+        if self.running.get() {
             unsafe { PostQuitMessage(0) };
         }
     }
 
     pub fn poll(&self) -> Result<()> {
-        let _run_guard = RunGuard::new(&self.state.running)?;
+        let _run_guard = RunGuard::new(&self.running)?;
 
         loop {
             unsafe {
@@ -272,7 +267,7 @@ impl EventLoopInner {
             }
         }
 
-        if let Some(panic) = self.state.panic.take() {
+        if let Some(panic) = self.panic.take() {
             panic::resume_unwind(panic);
         }
 

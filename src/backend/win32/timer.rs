@@ -17,7 +17,7 @@ struct TimerState {
 impl TimerState {
     fn cancel(&self) {
         if let Some(timer_id) = self.timer_id.take() {
-            let _ = unsafe { KillTimer(self.event_loop.inner.state.message_hwnd, timer_id) };
+            let _ = unsafe { KillTimer(self.event_loop.state.message_hwnd, timer_id) };
         }
     }
 }
@@ -56,7 +56,7 @@ pub struct TimerInner {
 impl TimerInner {
     pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<TimerInner> {
         let event_loop = context.event_loop;
-        let timers = &event_loop.inner.state.timers;
+        let timers = &event_loop.state.timers;
 
         let timer_id = timers.next_id.get();
         timers.next_id.set(timer_id + 1);
@@ -72,7 +72,7 @@ impl TimerInner {
 
         unsafe {
             let millis = duration.as_millis() as u32;
-            SetTimer(event_loop.inner.state.message_hwnd, timer_id, millis, None);
+            SetTimer(event_loop.state.message_hwnd, timer_id, millis, None);
         }
 
         Ok(TimerInner { state })
@@ -80,7 +80,7 @@ impl TimerInner {
 
     pub fn cancel(&self) {
         if let Some(timer_id) = self.state.timer_id.get() {
-            self.state.event_loop.inner.state.timers.timers.borrow_mut().remove(&timer_id);
+            self.state.event_loop.state.timers.timers.borrow_mut().remove(&timer_id);
         }
 
         self.state.cancel();

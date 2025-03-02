@@ -1,5 +1,6 @@
 use std::fmt;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 use crate::{backend, Result, Task, TaskHandle};
 
@@ -34,7 +35,7 @@ impl EventLoopOptions {
 
     pub fn build(&self) -> Result<EventLoop> {
         Ok(EventLoop {
-            inner: backend::EventLoopInner::new(self)?,
+            state: backend::EventLoopState::new(self)?,
             _marker: PhantomData,
         })
     }
@@ -42,7 +43,7 @@ impl EventLoopOptions {
 
 #[derive(Clone)]
 pub struct EventLoop {
-    pub(crate) inner: backend::EventLoopInner,
+    pub(crate) state: Rc<backend::EventLoopState>,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }
@@ -60,15 +61,15 @@ impl EventLoop {
     }
 
     pub fn run(&self) -> Result<()> {
-        self.inner.run()
+        self.state.run()
     }
 
     pub fn poll(&self) -> Result<()> {
-        self.inner.poll()
+        self.state.poll()
     }
 
     pub fn exit(&self) {
-        self.inner.exit();
+        self.state.exit();
     }
 }
 
@@ -84,6 +85,6 @@ use std::os::unix::io::{AsRawFd, RawFd};
 #[cfg(target_os = "linux")]
 impl AsRawFd for EventLoop {
     fn as_raw_fd(&self) -> RawFd {
-        self.inner.as_raw_fd()
+        self.state.as_raw_fd()
     }
 }

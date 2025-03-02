@@ -93,7 +93,7 @@ impl WindowState {
 
     fn deinit_shm(&self) {
         if let Some(shm_state) = self.shm_state.take() {
-            let _ = self.event_loop.inner.state.connection.shm_detach(shm_state.seg_id);
+            let _ = self.event_loop.state.connection.shm_detach(shm_state.seg_id);
 
             unsafe {
                 libc::shmdt(shm_state.ptr);
@@ -104,7 +104,7 @@ impl WindowState {
 
     pub fn close(&self) {
         if let Some(window_id) = self.window_id.take() {
-            let connection = &self.event_loop.inner.state.connection;
+            let connection = &self.event_loop.state.connection;
 
             if let Some(gc_id) = self.gc_id.take() {
                 let _ = connection.free_gc(gc_id);
@@ -134,7 +134,7 @@ impl WindowInner {
     pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<WindowInner> {
         let event_loop = context.event_loop;
 
-        let event_loop_state = &event_loop.inner.state;
+        let event_loop_state = &event_loop.state;
         let connection = &event_loop_state.connection;
 
         let window_id = connection.generate_id()?;
@@ -242,7 +242,7 @@ impl WindowInner {
 
     pub fn show(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            let connection = &self.state.event_loop.inner.state.connection;
+            let connection = &self.state.event_loop.state.connection;
             let _ = connection.map_window(window_id);
             let _ = connection.flush();
         }
@@ -250,7 +250,7 @@ impl WindowInner {
 
     pub fn hide(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            let connection = &self.state.event_loop.inner.state.connection;
+            let connection = &self.state.event_loop.state.connection;
             let _ = connection.unmap_window(window_id);
             let _ = connection.flush();
         }
@@ -261,7 +261,7 @@ impl WindowInner {
     }
 
     fn size_inner(&self) -> Result<Size> {
-        let event_loop_state = &self.state.event_loop.inner.state;
+        let event_loop_state = &self.state.event_loop.state;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
         let geom = event_loop_state.connection.get_geometry(window_id)?.reply()?;
         let size_physical = Size::new(geom.width as f64, geom.height as f64);
@@ -270,7 +270,7 @@ impl WindowInner {
     }
 
     pub fn scale(&self) -> f64 {
-        self.state.event_loop.inner.state.scale
+        self.state.event_loop.state.scale
     }
 
     pub fn present(&self, bitmap: Bitmap) {
@@ -282,7 +282,7 @@ impl WindowInner {
     }
 
     fn present_inner(&self, bitmap: Bitmap, rects: Option<&[Rect]>) -> Result<()> {
-        let event_loop_state = &self.state.event_loop.inner.state;
+        let event_loop_state = &self.state.event_loop.state;
         let connection = &event_loop_state.connection;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
         let gc_id = self.state.gc_id.get().ok_or(Error::WindowClosed)?;
@@ -367,7 +367,7 @@ impl WindowInner {
     }
 
     fn set_cursor_inner(&self, cursor: Cursor) -> Result<()> {
-        let event_loop_state = &self.state.event_loop.inner.state;
+        let event_loop_state = &self.state.event_loop.state;
         let connection = &event_loop_state.connection;
         let cursor_cache = &event_loop_state.cursor_cache;
         let window_id = self.state.window_id.get().ok_or(Error::WindowClosed)?;
@@ -414,7 +414,7 @@ impl WindowInner {
 
     pub fn set_mouse_position(&self, position: Point) {
         if let Some(window_id) = self.state.window_id.get() {
-            let event_loop_state = &self.state.event_loop.inner.state;
+            let event_loop_state = &self.state.event_loop.state;
             let position_physical = position.scale(event_loop_state.scale);
 
             let _ = event_loop_state.connection.warp_pointer(
@@ -433,12 +433,12 @@ impl WindowInner {
 
     pub fn close(&self) {
         if let Some(window_id) = self.state.window_id.get() {
-            self.state.event_loop.inner.state.windows.borrow_mut().remove(&window_id);
+            self.state.event_loop.state.windows.borrow_mut().remove(&window_id);
         }
 
         self.state.close();
 
-        let _ = self.state.event_loop.inner.state.connection.flush();
+        let _ = self.state.event_loop.state.connection.flush();
     }
 
     pub fn as_raw(&self) -> Result<RawWindow> {
