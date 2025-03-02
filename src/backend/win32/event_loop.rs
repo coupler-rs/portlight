@@ -20,7 +20,7 @@ use super::timer::Timers;
 use super::vsync::VsyncThreads;
 use super::window::{self, WindowState};
 use super::{class_name, hinstance, to_wstring, WM_USER_VBLANK};
-use crate::{Error, EventLoop, EventLoopMode, EventLoopOptions, Result};
+use crate::{Error, EventLoopMode, EventLoopOptions, Result};
 
 fn register_message_class() -> Result<PCWSTR> {
     let class_name = to_wstring(&class_name("message-"));
@@ -69,18 +69,14 @@ pub unsafe extern "system" fn message_wnd_proc(
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     };
 
-    let event_loop = EventLoop::from_inner(EventLoopInner::from_state(event_loop_state));
-
     let result = panic::catch_unwind(AssertUnwindSafe(|| match msg {
         msg::WM_TIMER => {
-            event_loop.inner.state.timers.handle_timer(&event_loop, wparam.0);
+            event_loop_state.timers.handle_timer(wparam.0);
         }
         WM_USER_VBLANK => {
-            event_loop
-                .inner
-                .state
+            event_loop_state
                 .vsync_threads
-                .handle_vblank(&event_loop, HMONITOR(lparam.0));
+                .handle_vblank(&event_loop_state, HMONITOR(lparam.0));
         }
         msg::WM_DESTROY => {
             SetWindowLongPtrW(hwnd, msg::GWLP_USERDATA, 0);
@@ -90,11 +86,11 @@ pub unsafe extern "system" fn message_wnd_proc(
     }));
 
     if let Err(panic) = result {
-        event_loop.inner.state.propagate_panic(panic);
+        event_loop_state.propagate_panic(panic);
     }
 
     // If a panic occurs while dropping the Rc<EventLoopState>, the only thing left to do is abort.
-    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(event_loop))) {
+    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(event_loop_state))) {
         std::process::abort();
     }
 
@@ -166,10 +162,6 @@ pub struct EventLoopInner {
 }
 
 impl EventLoopInner {
-    fn from_state(state: Rc<EventLoopState>) -> EventLoopInner {
-        EventLoopInner { state }
-    }
-
     pub fn new(options: &EventLoopOptions) -> Result<EventLoopInner> {
         let message_class = register_message_class()?;
 
