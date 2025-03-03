@@ -50,7 +50,7 @@ pub trait Task {
 
 pub struct TaskHandle<T> {
     event_loop: EventLoop,
-    task: Rc<RefCell<T>>,
+    pub(crate) task: Rc<RefCell<T>>,
     // ensure !Send and !Sync on all platforms
     _marker: PhantomData<*mut ()>,
 }

@@ -5,8 +5,15 @@ authors = ["Micah Johnston <micah@glowcoil.com>"]
 edition = "2021"
 publish = false
 
-[dependencies]
+[[test]]
+name = "leak"
+harness = false
+required-features = ["_test"]
 
+[features]
+_test = []
+
+[dependencies]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 getrandom = "0.2.10"

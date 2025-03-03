@@ -21,6 +21,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Build
-        run: cargo build --workspace --all-targets
+        run: cargo build --workspace --all-targets --all-features
+      - name: Xvfb
+        if: runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 &
+          echo "DISPLAY=:99.0" >> $GITHUB_ENV
       - name: Run tests
-        run: cargo test --workspace --all-targets
+        run: |
+          cargo test --workspace --all-targets --all-features
