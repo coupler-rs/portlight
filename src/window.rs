@@ -147,7 +147,7 @@ pub enum WindowEvent<'a> {
 #[derive(Copy, Clone, Debug)]
 pub enum RawWindow {
     Win32(*mut c_void),
-    Cocoa(*mut c_void),
+    AppKit(*mut c_void),
     X11(c_ulong),
 }
 

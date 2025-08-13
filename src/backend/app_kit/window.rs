@@ -420,7 +420,7 @@ impl WindowState {
             let event_loop_state = &event_loop.state;
 
             let parent_view = if let Some(parent) = options.parent {
-                if let RawWindow::Cocoa(parent_view) = parent {
+                if let RawWindow::AppKit(parent_view) = parent {
                     Some(parent_view as *const NSView)
                 } else {
                     return Err(Error::InvalidWindowHandle);
@@ -639,7 +639,7 @@ impl WindowState {
 
     pub fn as_raw(&self) -> Result<RawWindow> {
         if let Some(view) = self.view.borrow().as_ref() {
-            Ok(RawWindow::Cocoa(Id::as_ptr(view) as *mut c_void))
+            Ok(RawWindow::AppKit(Id::as_ptr(view) as *mut c_void))
         } else {
             Err(Error::WindowClosed)
         }

@@ -4,9 +4,9 @@ mod win32;
 pub use win32::*;
 
 #[cfg(target_os = "macos")]
-mod cocoa;
+mod app_kit;
 #[cfg(target_os = "macos")]
-pub use self::cocoa::*;
+pub use self::app_kit::*;
 
 #[cfg(target_os = "linux")]
 mod x11;
