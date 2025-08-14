@@ -1,5 +1,8 @@
 # Portlight
 
+[![Cargo](https://img.shields.io/crates/v/portlight.svg)](https://crates.io/crates/portlight)
+[![Documentation](https://docs.rs/portlight/badge.svg)](https://docs.rs/portlight)
+
 Portlight is a cross-platform window management library built for use in both standalone applications and embedded plugin GUIs. It currently supports Windows, macOS, and X11.
 
 Supported functionality:

@@ -1,9 +1,11 @@
 [package]
 name = "portlight"
-version = "0.1.0"
-authors = ["Micah Johnston <micah@glowcoil.com>"]
+version = "0.0.1"
+authors = ["Micah Johnston <micahrjohnston@gmail.com>"]
 edition = "2021"
-publish = false
+description = "Cross-platform window management for audio plugins"
+repository = "https://github.com/coupler-rs/portlight"
+license = "MIT OR Apache-2.0"
 
 [[test]]
 name = "leak"
