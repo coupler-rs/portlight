@@ -37,7 +37,6 @@ features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6.2", features = ["catch-all"] }
-objc-sys = "0.3.1"
 core-foundation = "0.9.3"
 getrandom = "0.2.10"
 

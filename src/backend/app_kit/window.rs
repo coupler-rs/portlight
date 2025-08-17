@@ -7,11 +7,10 @@ use std::rc::{Rc, Weak};
 
 use objc2::declare::ClassBuilder;
 use objc2::encode::Encoding;
+use objc2::ffi::objc_disposeClassPair;
 use objc2::rc::{autoreleasepool, Allocated, Retained};
 use objc2::runtime::{AnyClass, Bool, MessageReceiver, Sel};
 use objc2::{class, msg_send, sel, AnyThread, ClassType, Message, RefEncode};
-
-use objc_sys::{objc_class, objc_disposeClassPair};
 
 use objc2_app_kit::{
     NSBackingStoreType, NSCursor, NSEvent, NSScreen, NSTrackingArea, NSTrackingAreaOptions, NSView,
@@ -163,7 +162,7 @@ impl View {
     }
 
     pub unsafe fn unregister_class(class: &'static AnyClass) {
-        objc_disposeClassPair(class as *const _ as *mut objc_class);
+        objc_disposeClassPair(class as *const AnyClass as *mut AnyClass);
     }
 
     fn state_ivar(&self) -> &Cell<*mut c_void> {
