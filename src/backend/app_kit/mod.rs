@@ -2,7 +2,6 @@ use std::fmt;
 
 mod display_links;
 mod event_loop;
-mod ffi;
 mod surface;
 mod timer;
 mod window;
