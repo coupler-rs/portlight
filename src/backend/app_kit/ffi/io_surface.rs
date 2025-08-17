@@ -4,9 +4,7 @@
 
 use std::ffi::{c_int, c_void};
 
-use core_foundation::base::CFTypeRef;
-use core_foundation::dictionary::CFDictionaryRef;
-use core_foundation::string::CFStringRef;
+use objc2_core_foundation::{CFDictionary, CFString, CFType};
 
 use super::Boolean;
 
@@ -28,15 +26,15 @@ pub const kCVPixelFormatType_32BGRA: i32 = 0x42475241; // 'BGRA'
 
 #[link(name = "IOSurface", kind = "framework")]
 extern "C" {
-    pub static kIOSurfaceWidth: CFStringRef;
-    pub static kIOSurfaceHeight: CFStringRef;
-    pub static kIOSurfaceBytesPerElement: CFStringRef;
-    pub static kIOSurfacePixelFormat: CFStringRef;
-    pub static kIOSurfaceColorSpace: CFStringRef;
+    pub static kIOSurfaceWidth: &'static CFString;
+    pub static kIOSurfaceHeight: &'static CFString;
+    pub static kIOSurfaceBytesPerElement: &'static CFString;
+    pub static kIOSurfacePixelFormat: &'static CFString;
+    pub static kIOSurfaceColorSpace: &'static CFString;
 
-    pub static kCGColorSpaceSRGB: CFStringRef;
+    pub static kCGColorSpaceSRGB: &'static CFString;
 
-    pub fn IOSurfaceCreate(properties: CFDictionaryRef) -> IOSurfaceRef;
+    pub fn IOSurfaceCreate(properties: *const CFDictionary) -> IOSurfaceRef;
     pub fn IOSurfaceLock(
         buffer: IOSurfaceRef,
         options: IOSurfaceLockOptions,
@@ -48,6 +46,6 @@ extern "C" {
         seed: *mut u32,
     ) -> kern_return_t;
     pub fn IOSurfaceGetBaseAddress(buffer: IOSurfaceRef) -> *mut c_void;
-    pub fn IOSurfaceSetValue(buffer: IOSurfaceRef, key: CFStringRef, value: CFTypeRef);
+    pub fn IOSurfaceSetValue(buffer: IOSurfaceRef, key: *const CFString, value: *const CFType);
     pub fn IOSurfaceIsInUse(buffer: IOSurfaceRef) -> Boolean;
 }

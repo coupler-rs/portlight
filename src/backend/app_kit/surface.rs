@@ -1,14 +1,11 @@
+use std::ptr::NonNull;
 use std::{mem, ptr, slice};
 
 use objc2::msg_send;
 use objc2::rc::Retained;
 
+use objc2_core_foundation::{CFDictionary, CFNumber, CFRetained, CFString, CFType};
 use objc2_quartz_core::{kCAFilterNearest, kCAGravityTopLeft, CALayer};
-
-use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
-use core_foundation::dictionary::CFDictionary;
-use core_foundation::number::CFNumber;
-use core_foundation::string::CFString;
 
 use super::ffi::io_surface::*;
 use super::OsError;
@@ -34,26 +31,22 @@ pub struct Surface {
 impl Surface {
     pub fn new(width: usize, height: usize) -> Result<Surface> {
         unsafe {
-            let properties = CFDictionary::from_CFType_pairs(&[
-                (
-                    CFString::wrap_under_get_rule(kIOSurfaceWidth),
-                    CFNumber::from(width as i32).as_CFType(),
-                ),
-                (
-                    CFString::wrap_under_get_rule(kIOSurfaceHeight),
-                    CFNumber::from(height as i32).as_CFType(),
-                ),
-                (
-                    CFString::wrap_under_get_rule(kIOSurfaceBytesPerElement),
-                    CFNumber::from(BYTES_PER_ELEMENT as i32).as_CFType(),
-                ),
-                (
-                    CFString::wrap_under_get_rule(kIOSurfacePixelFormat),
-                    CFNumber::from(kCVPixelFormatType_32BGRA).as_CFType(),
-                ),
-            ]);
+            let properties = CFDictionary::<CFString, CFNumber>::from_slices(
+                &[
+                    kIOSurfaceWidth,
+                    kIOSurfaceHeight,
+                    kIOSurfaceBytesPerElement,
+                    kIOSurfacePixelFormat,
+                ],
+                &[
+                    &CFNumber::new_i32(width as i32),
+                    &CFNumber::new_i32(height as i32),
+                    &CFNumber::new_i32(BYTES_PER_ELEMENT as i32),
+                    &CFNumber::new_i32(kCVPixelFormatType_32BGRA),
+                ],
+            );
 
-            let surface = IOSurfaceCreate(properties.as_concrete_TypeRef());
+            let surface = IOSurfaceCreate(CFRetained::as_ptr(&properties).as_ptr() as *mut _);
             if surface.is_null() {
                 return Err(Error::Os(OsError::Other("could not create IOSurface")));
             }
@@ -61,7 +54,7 @@ impl Surface {
             IOSurfaceSetValue(
                 surface,
                 kIOSurfaceColorSpace,
-                kCGColorSpaceSRGB as CFTypeRef,
+                kCGColorSpaceSRGB as *const CFString as *const CFType,
             );
 
             let layer = CALayer::layer();
@@ -104,7 +97,9 @@ impl Surface {
 impl Drop for Surface {
     fn drop(&mut self) {
         unsafe {
-            CFRelease(self.surface as CFTypeRef);
+            drop(CFRetained::from_raw(NonNull::new_unchecked(
+                self.surface as *mut CFType,
+            )));
         }
     }
 }

@@ -6,10 +6,10 @@ use std::ptr;
 use std::rc::{Rc, Weak};
 
 use objc2_app_kit::NSScreen;
+use objc2_core_foundation::{
+    kCFRunLoopCommonModes, CFRetained, CFRunLoop, CFRunLoopSource, CFRunLoopSourceContext,
+};
 use objc2_foundation::{ns_string, NSNumber};
-
-use core_foundation::base::{CFRelease, CFTypeRef};
-use core_foundation::runloop::*;
 
 use super::event_loop::EventLoopState;
 use super::ffi::display_link::*;
@@ -36,22 +36,22 @@ extern "C" fn callback(
     _flagsOut: *mut CVOptionFlags,
     displayLinkContext: *mut c_void,
 ) -> CVReturn {
-    let source = displayLinkContext as CFRunLoopSourceRef;
-    unsafe {
-        CFRunLoopSourceSignal(source);
-        CFRunLoopWakeUp(CFRunLoopGetMain());
-    }
+    let source = unsafe { &*(displayLinkContext as *const CFRunLoopSource) };
+    source.signal();
+
+    let run_loop = CFRunLoop::main().unwrap();
+    run_loop.wake_up();
 
     kCVReturnSuccess
 }
 
-extern "C" fn retain(info: *const c_void) -> *const c_void {
+extern "C-unwind" fn retain(info: *const c_void) -> *const c_void {
     unsafe { Rc::increment_strong_count(info as *const DisplayState) };
 
     info
 }
 
-extern "C" fn release(info: *const c_void) {
+extern "C-unwind" fn release(info: *const c_void) {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         unsafe { Rc::decrement_strong_count(info as *const DisplayState) };
     }));
@@ -62,7 +62,7 @@ extern "C" fn release(info: *const c_void) {
     }
 }
 
-extern "C" fn perform(info: *const c_void) {
+extern "C-unwind" fn perform(info: *mut c_void) {
     let state = unsafe { &*(info as *mut DisplayState) };
 
     let Some(event_loop_state) = state.event_loop_state.upgrade() else {
@@ -96,7 +96,7 @@ struct DisplayState {
 
 struct Display {
     link: CVDisplayLinkRef,
-    source: CFRunLoopSourceRef,
+    source: CFRetained<CFRunLoopSource>,
 }
 
 impl Display {
@@ -116,19 +116,20 @@ impl Display {
             hash: None,
             schedule: None,
             cancel: None,
-            perform,
+            perform: Some(perform),
         };
 
-        let source = unsafe { CFRunLoopSourceCreate(ptr::null(), 0, &mut context) };
-        unsafe {
-            let run_loop = CFRunLoopGetMain();
-            CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
-        }
+        let source = unsafe { CFRunLoopSource::new(None, 0, &mut context) }.unwrap();
+
+        let run_loop = CFRunLoop::main().unwrap();
+        run_loop.add_source(Some(&source), unsafe { kCFRunLoopCommonModes });
+
+        let source_ptr = CFRetained::as_ptr(&source).as_ptr();
 
         let mut link = ptr::null();
         unsafe {
             CVDisplayLinkCreateWithCGDisplay(display_id, &mut link);
-            CVDisplayLinkSetOutputCallback(link, callback, source as *mut c_void);
+            CVDisplayLinkSetOutputCallback(link, callback, source_ptr as *mut c_void);
             CVDisplayLinkStart(link);
         }
 
@@ -142,8 +143,7 @@ impl Drop for Display {
             CVDisplayLinkStop(self.link);
             CVDisplayLinkRelease(self.link);
 
-            CFRunLoopSourceInvalidate(self.source);
-            CFRelease(self.source as CFTypeRef);
+            self.source.invalidate();
         }
     }
 }

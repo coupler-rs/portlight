@@ -2,23 +2,24 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::ptr;
+use std::ptr::NonNull;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
-use core_foundation::base::{CFRelease, CFTypeRef};
-use core_foundation::date::CFAbsoluteTimeGetCurrent;
-use core_foundation::runloop::*;
+use objc2_core_foundation::{
+    kCFRunLoopCommonModes, CFAbsoluteTimeGetCurrent, CFRetained, CFRunLoop, CFRunLoopTimer,
+    CFRunLoopTimerContext,
+};
 
 use crate::{Context, Event, EventLoop, Key, Result, Task};
 
-extern "C" fn retain(info: *const c_void) -> *const c_void {
+extern "C-unwind" fn retain(info: *const c_void) -> *const c_void {
     unsafe { Rc::increment_strong_count(info as *const TimerState) };
 
     info
 }
 
-extern "C" fn release(info: *const c_void) {
+extern "C-unwind" fn release(info: *const c_void) {
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
         unsafe { Rc::decrement_strong_count(info as *const TimerState) };
     }));
@@ -29,7 +30,7 @@ extern "C" fn release(info: *const c_void) {
     }
 }
 
-extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
+extern "C-unwind" fn callback(_timer: *mut CFRunLoopTimer, info: *mut c_void) {
     let state = unsafe { &*(info as *mut TimerState) };
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
@@ -42,7 +43,7 @@ extern "C" fn callback(_timer: CFRunLoopTimerRef, info: *mut c_void) {
 }
 
 pub struct TimerState {
-    timer_ref: Cell<Option<CFRunLoopTimerRef>>,
+    timer: Cell<Option<CFRetained<CFRunLoopTimer>>>,
     event_loop: EventLoop,
     handler: Weak<RefCell<dyn Task>>,
     key: Key,
@@ -61,7 +62,7 @@ impl TimerState {
         let event_loop_state = &context.event_loop.state;
 
         let state = Rc::new(TimerState {
-            timer_ref: Cell::new(None),
+            timer: Cell::new(None),
             event_loop: context.event_loop.clone(),
             handler: Rc::downgrade(context.task),
             key,
@@ -75,46 +76,45 @@ impl TimerState {
             copyDescription: None,
         };
 
-        let now = unsafe { CFAbsoluteTimeGetCurrent() };
+        let now = CFAbsoluteTimeGetCurrent();
         let interval = duration.as_secs_f64();
 
-        let timer_ref = unsafe {
-            CFRunLoopTimerCreate(
-                ptr::null(),
+        let timer = unsafe {
+            CFRunLoopTimer::new(
+                None,
                 now + interval,
                 interval,
                 0,
                 0,
-                callback,
+                Some(callback),
                 &mut context,
             )
-        };
-        state.timer_ref.set(Some(timer_ref));
-
-        event_loop_state.timers.timers.borrow_mut().insert(timer_ref, Rc::clone(&state));
-
-        unsafe {
-            let run_loop = CFRunLoopGetCurrent();
-            CFRunLoopAddTimer(run_loop, timer_ref, kCFRunLoopCommonModes);
         }
+        .unwrap();
+
+        let timer_ptr = CFRetained::as_ptr(&timer);
+        event_loop_state.timers.timers.borrow_mut().insert(timer_ptr, Rc::clone(&state));
+
+        let run_loop = CFRunLoop::main().unwrap();
+        run_loop.add_timer(Some(&timer), unsafe { kCFRunLoopCommonModes });
+
+        state.timer.set(Some(timer));
 
         Ok(state)
     }
 
     pub fn cancel(&self) {
-        if let Some(timer_ref) = self.timer_ref.take() {
-            self.event_loop.state.timers.timers.borrow_mut().remove(&timer_ref);
+        if let Some(timer) = self.timer.take() {
+            let timer_ptr = CFRetained::as_ptr(&timer);
+            self.event_loop.state.timers.timers.borrow_mut().remove(&timer_ptr);
 
-            unsafe {
-                CFRunLoopTimerInvalidate(timer_ref);
-                CFRelease(timer_ref as CFTypeRef);
-            }
+            timer.invalidate();
         }
     }
 }
 
 pub struct Timers {
-    timers: RefCell<HashMap<CFRunLoopTimerRef, Rc<TimerState>>>,
+    timers: RefCell<HashMap<NonNull<CFRunLoopTimer>, Rc<TimerState>>>,
 }
 
 impl Timers {
