@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use std::panic;
 use std::rc::Rc;
 
-use objc2::rc::{autoreleasepool, Id};
+use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::AnyClass;
-use objc2::ClassType;
+use objc2::AnyThread;
 
 use objc2_app_kit::{
     self, NSApplication, NSApplicationActivationPolicy, NSCursor, NSEvent, NSEventModifierFlags,
@@ -45,7 +45,7 @@ pub struct EventLoopState {
     pub running: Cell<bool>,
     pub panic: Cell<Option<Box<dyn Any + Send>>>,
     pub class: &'static AnyClass,
-    pub empty_cursor: Id<NSCursor>,
+    pub empty_cursor: Retained<NSCursor>,
     pub timers: Timers,
     pub display_links: DisplayLinks,
     pub windows: RefCell<HashMap<*const View, Rc<WindowState>>>,
@@ -121,9 +121,7 @@ impl EventLoopState {
             let _run_guard = RunGuard::new(&self.running)?;
 
             let app = NSApplication::sharedApplication(self.mtm);
-            unsafe {
-                app.run();
-            }
+            app.run();
 
             if let Some(panic) = self.panic.take() {
                 panic::resume_unwind(panic);

@@ -1,15 +1,15 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
+use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
 use std::panic::{self, AssertUnwindSafe};
 use std::rc::{Rc, Weak};
 
 use objc2::declare::ClassBuilder;
 use objc2::encode::Encoding;
-use objc2::rc::{autoreleasepool, Allocated, Id};
+use objc2::rc::{autoreleasepool, Allocated, Retained};
 use objc2::runtime::{AnyClass, Bool, MessageReceiver, Sel};
-use objc2::{class, msg_send, msg_send_id, sel};
-use objc2::{ClassType, Message, RefEncode};
+use objc2::{class, msg_send, sel, AnyThread, ClassType, Message, RefEncode};
 
 use objc_sys::{objc_class, objc_disposeClassPair};
 
@@ -26,7 +26,7 @@ use crate::{
     Response, Result, Size, Task, WindowEvent, WindowOptions,
 };
 
-fn class_name() -> String {
+fn class_name() -> CString {
     use std::fmt::Write;
 
     let mut bytes = [0u8; 16];
@@ -37,7 +37,7 @@ fn class_name() -> String {
         write!(&mut name, "{:x}", byte).unwrap();
     }
 
-    name
+    CString::new(name).unwrap()
 }
 
 fn mouse_button_from_number(button_number: NSInteger) -> Option<MouseButton> {
@@ -85,7 +85,7 @@ impl View {
             )));
         };
 
-        builder.add_ivar::<Cell<*mut c_void>>("windowState");
+        builder.add_ivar::<Cell<*mut c_void>>(c"windowState");
 
         unsafe {
             builder.add_method(
@@ -167,7 +167,7 @@ impl View {
     }
 
     fn state_ivar(&self) -> &Cell<*mut c_void> {
-        let ivar = self.class().instance_variable("windowState").unwrap();
+        let ivar = self.class().instance_variable(c"windowState").unwrap();
         unsafe { ivar.load::<Cell<*mut c_void>>(self) }
     }
 
@@ -183,8 +183,8 @@ impl View {
         }
     }
 
-    pub fn retain(&self) -> Id<View> {
-        unsafe { Id::retain(self as *const View as *mut View) }.unwrap()
+    pub fn retain(&self) -> Retained<View> {
+        unsafe { Retained::retain(self as *const View as *mut View) }.unwrap()
     }
 
     unsafe extern "C" fn accepts_first_mouse(&self, _: Sel, _event: Option<&NSEvent>) -> Bool {
@@ -352,8 +352,8 @@ impl View {
 }
 
 pub struct WindowState {
-    view: RefCell<Option<Id<View>>>,
-    window: RefCell<Option<Id<NSWindow>>>,
+    view: RefCell<Option<Retained<View>>>,
+    window: RefCell<Option<Retained<NSWindow>>>,
     surface: RefCell<Option<Surface>>,
     cursor: Cell<Cursor>,
     event_loop: EventLoop,
@@ -362,11 +362,11 @@ pub struct WindowState {
 }
 
 impl WindowState {
-    pub fn view(&self) -> Option<Id<View>> {
+    pub fn view(&self) -> Option<Retained<View>> {
         self.view.borrow().as_ref().map(|view| view.retain())
     }
 
-    pub fn window(&self) -> Option<Id<NSWindow>> {
+    pub fn window(&self) -> Option<Retained<NSWindow>> {
         self.window.borrow().clone()
     }
 
@@ -378,12 +378,12 @@ impl WindowState {
     }
 
     fn update_cursor(&self) {
-        fn try_get_cursor(selector: Sel) -> Id<NSCursor> {
+        fn try_get_cursor(selector: Sel) -> Retained<NSCursor> {
             unsafe {
                 let class = NSCursor::class();
                 if objc2::msg_send![class, respondsToSelector: selector] {
                     let cursor: *mut NSCursor = class.send_message(selector, ());
-                    if let Some(cursor) = Id::retain(cursor) {
+                    if let Some(cursor) = Retained::retain(cursor) {
                         return cursor;
                     }
                 }
@@ -445,18 +445,18 @@ impl WindowState {
                 key,
             });
 
-            let view: Allocated<View> = unsafe { msg_send_id![event_loop_state.class, alloc] };
-            let view: Id<View> = unsafe { msg_send_id![view, initWithFrame: frame] };
+            let view: Allocated<View> = unsafe { msg_send![event_loop_state.class, alloc] };
+            let view: Retained<View> = unsafe { msg_send![view, initWithFrame: frame] };
             view.state_ivar().set(Rc::into_raw(Rc::clone(&state)) as *mut c_void);
 
             state.view.replace(Some(view.retain()));
 
-            let tracking_options = NSTrackingAreaOptions::NSTrackingMouseEnteredAndExited
-                | NSTrackingAreaOptions::NSTrackingMouseMoved
-                | NSTrackingAreaOptions::NSTrackingCursorUpdate
-                | NSTrackingAreaOptions::NSTrackingActiveAlways
-                | NSTrackingAreaOptions::NSTrackingInVisibleRect
-                | NSTrackingAreaOptions::NSTrackingEnabledDuringMouseDrag;
+            let tracking_options = NSTrackingAreaOptions::MouseEnteredAndExited
+                | NSTrackingAreaOptions::MouseMoved
+                | NSTrackingAreaOptions::CursorUpdate
+                | NSTrackingAreaOptions::ActiveAlways
+                | NSTrackingAreaOptions::InVisibleRect
+                | NSTrackingAreaOptions::EnabledDuringMouseDrag;
 
             unsafe {
                 let tracking_area = NSTrackingArea::initWithRect_options_owner_userInfo(
@@ -491,7 +491,7 @@ impl WindowState {
                         event_loop_state.mtm.alloc::<NSWindow>(),
                         content_rect,
                         style_mask,
-                        NSBackingStoreType::NSBackingStoreBuffered,
+                        NSBackingStoreType::Buffered,
                         false,
                     )
                 };
@@ -515,7 +515,7 @@ impl WindowState {
             event_loop_state
                 .windows
                 .borrow_mut()
-                .insert(Id::as_ptr(&view), Rc::clone(&state));
+                .insert(Retained::as_ptr(&view), Rc::clone(&state));
 
             let scale = state.scale();
 
@@ -580,8 +580,11 @@ impl WindowState {
             if let Some(view) = self.view() {
                 if let Some(window) = view.window() {
                     return window.backingScaleFactor();
-                } else if let Some(screen) = NSScreen::screens(mtm).get(0) {
-                    return screen.backingScaleFactor();
+                }
+
+                let screens = NSScreen::screens(mtm);
+                if screens.count() > 0 {
+                    return screens.objectAtIndex(0).backingScaleFactor();
                 }
             }
 
@@ -631,7 +634,7 @@ impl WindowState {
             }
 
             if let Some(view) = self.view.take() {
-                self.event_loop.state.windows.borrow_mut().remove(&Id::as_ptr(&view));
+                self.event_loop.state.windows.borrow_mut().remove(&Retained::as_ptr(&view));
                 unsafe { view.removeFromSuperview() };
             }
         })
@@ -639,7 +642,7 @@ impl WindowState {
 
     pub fn as_raw(&self) -> Result<RawWindow> {
         if let Some(view) = self.view.borrow().as_ref() {
-            Ok(RawWindow::AppKit(Id::as_ptr(view) as *mut c_void))
+            Ok(RawWindow::AppKit(Retained::as_ptr(view) as *mut c_void))
         } else {
             Err(Error::WindowClosed)
         }

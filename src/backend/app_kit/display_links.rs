@@ -5,8 +5,6 @@ use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::rc::{Rc, Weak};
 
-use objc2::rc::Id;
-
 use objc2_app_kit::NSScreen;
 use objc2_foundation::{ns_string, NSNumber};
 
@@ -19,12 +17,9 @@ use super::window::View;
 use crate::WindowEvent;
 
 fn display_from_screen(screen: &NSScreen) -> Option<CGDirectDisplayID> {
-    unsafe {
-        let number = screen.deviceDescription().objectForKey(ns_string!("NSScreenNumber"))?;
-        let id = Id::cast::<NSNumber>(number).unsignedIntegerValue() as CGDirectDisplayID;
-
-        Some(id)
-    }
+    let number = screen.deviceDescription().objectForKey(ns_string!("NSScreenNumber"))?;
+    let number = number.downcast::<NSNumber>().ok()?;
+    Some(number.unsignedIntegerValue() as CGDirectDisplayID)
 }
 
 fn display_from_view(view: &View) -> Option<CGDirectDisplayID> {

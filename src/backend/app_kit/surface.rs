@@ -1,9 +1,9 @@
 use std::{mem, ptr, slice};
 
 use objc2::msg_send;
-use objc2::rc::Id;
+use objc2::rc::Retained;
 
-use super::ffi::layer::*;
+use objc2_quartz_core::{kCAFilterNearest, kCAGravityTopLeft, CALayer};
 
 use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
 use core_foundation::dictionary::CFDictionary;
@@ -25,7 +25,7 @@ unsafe fn set_contents_changed(layer: &CALayer) {
 }
 
 pub struct Surface {
-    pub layer: Id<CALayer>,
+    pub layer: Retained<CALayer>,
     pub surface: IOSurfaceRef,
     pub width: usize,
     pub height: usize,

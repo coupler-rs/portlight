@@ -36,21 +36,24 @@ features = [
 ]
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.5.2", features = ["catch-all"] }
+objc2 = { version = "0.6.2", features = ["catch-all"] }
 objc-sys = "0.3.1"
 core-foundation = "0.9.3"
 getrandom = "0.2.10"
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
-version = "0.2.2"
+version = "0.3.1"
+default-features = false
 features = [
     "NSEnumerator",
     "NSThread",
 ]
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-app-kit]
-version = "0.2.2"
+version = "0.3.1"
+default-features = false
 features = [
+    "objc2-core-foundation",
     "NSApplication",
     "NSRunningApplication",
     "NSResponder",
@@ -63,6 +66,14 @@ features = [
     "NSImage",
     "NSGraphics",
     "NSGraphicsContext",
+]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-quartz-core]
+version = "0.3.1"
+default-features = false
+features = [
+    "objc2-core-foundation",
+    "CALayer",
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies]
