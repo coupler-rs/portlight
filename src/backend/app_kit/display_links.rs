@@ -2,17 +2,18 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::rc::{Rc, Weak};
 
 use objc2_app_kit::NSScreen;
 use objc2_core_foundation::{
     kCFRunLoopCommonModes, CFRetained, CFRunLoop, CFRunLoopSource, CFRunLoopSourceContext,
 };
+use objc2_core_graphics::CGDirectDisplayID;
+use objc2_core_video::{kCVReturnSuccess, CVDisplayLink, CVOptionFlags, CVReturn, CVTimeStamp};
 use objc2_foundation::{ns_string, NSNumber};
 
 use super::event_loop::EventLoopState;
-use super::ffi::display_link::*;
 use super::window::View;
 use crate::WindowEvent;
 
@@ -28,12 +29,12 @@ fn display_from_view(view: &View) -> Option<CGDirectDisplayID> {
 }
 
 #[allow(non_snake_case)]
-extern "C" fn callback(
-    _displayLink: CVDisplayLinkRef,
-    _inNow: *const CVTimeStamp,
-    _inOutputTime: *const CVTimeStamp,
+extern "C-unwind" fn callback(
+    _displayLink: NonNull<CVDisplayLink>,
+    _inNow: NonNull<CVTimeStamp>,
+    _inOutputTime: NonNull<CVTimeStamp>,
     _flagsIn: CVOptionFlags,
-    _flagsOut: *mut CVOptionFlags,
+    _flagsOut: NonNull<CVOptionFlags>,
     displayLinkContext: *mut c_void,
 ) -> CVReturn {
     let source = unsafe { &*(displayLinkContext as *const CFRunLoopSource) };
@@ -95,12 +96,15 @@ struct DisplayState {
 }
 
 struct Display {
-    link: CVDisplayLinkRef,
+    link: CFRetained<CVDisplayLink>,
     source: CFRetained<CFRunLoopSource>,
 }
 
 impl Display {
-    pub fn new(event_loop_state: &Rc<EventLoopState>, display_id: CGDirectDisplayID) -> Display {
+    pub fn new(
+        event_loop_state: &Rc<EventLoopState>,
+        display_id: CGDirectDisplayID,
+    ) -> Option<Display> {
         let state = Rc::new(DisplayState {
             display_id,
             event_loop_state: Rc::downgrade(event_loop_state),
@@ -126,22 +130,34 @@ impl Display {
 
         let source_ptr = CFRetained::as_ptr(&source).as_ptr();
 
-        let mut link = ptr::null();
-        unsafe {
-            CVDisplayLinkCreateWithCGDisplay(display_id, &mut link);
-            CVDisplayLinkSetOutputCallback(link, callback, source_ptr as *mut c_void);
-            CVDisplayLinkStart(link);
+        let mut link = ptr::null_mut();
+
+        #[allow(deprecated)]
+        let ret = unsafe {
+            CVDisplayLink::create_with_cg_display(display_id, NonNull::new_unchecked(&mut link))
+        };
+
+        if ret != kCVReturnSuccess {
+            return None;
         }
 
-        Display { link, source }
+        let link = unsafe { CFRetained::from_raw(NonNull::new(link).unwrap()) };
+
+        #[allow(deprecated)]
+        unsafe {
+            link.set_output_callback(Some(callback), source_ptr as *mut c_void);
+            link.start();
+        }
+
+        Some(Display { link, source })
     }
 }
 
 impl Drop for Display {
     fn drop(&mut self) {
         unsafe {
-            CVDisplayLinkStop(self.link);
-            CVDisplayLinkRelease(self.link);
+            #[allow(deprecated)]
+            self.link.stop();
 
             self.source.invalidate();
         }
@@ -162,7 +178,9 @@ impl DisplayLinks {
     pub fn init(&self, event_loop_state: &Rc<EventLoopState>) {
         for screen in NSScreen::screens(event_loop_state.mtm) {
             if let Some(id) = display_from_screen(&*screen) {
-                self.displays.borrow_mut().insert(id, Display::new(event_loop_state, id));
+                if let Some(display) = Display::new(event_loop_state, id) {
+                    self.displays.borrow_mut().insert(id, display);
+                }
             }
         }
     }

@@ -85,6 +85,23 @@ features = [
     "CALayer",
 ]
 
+[target.'cfg(target_os = "macos")'.dependencies.objc2-core-video]
+version = "0.3.1"
+default-features = false
+features = [
+    "objc2-core-graphics",
+    "CVBase",
+    "CVDisplayLink",
+    "CVReturn",
+]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-core-graphics]
+version = "0.3.1"
+default-features = false
+features = [
+    "CGDirectDisplay",
+]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.12.0", features = ["cursor", "shm", "present"] }
 libc = "0.2"
