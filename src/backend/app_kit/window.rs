@@ -524,11 +524,11 @@ impl WindowState {
             )?;
 
             unsafe {
-                let () = msg_send![&*view, setLayer: &*surface.layer];
-                view.setWantsLayer(true);
-
-                surface.layer.setContentsScale(scale);
+                view.setLayer(Some(&*surface.layer));
             }
+            view.setWantsLayer(true);
+
+            surface.layer.setContentsScale(scale);
 
             state.surface.replace(Some(surface));
 
