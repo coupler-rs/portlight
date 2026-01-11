@@ -11,7 +11,7 @@ use objc2_io_surface::{
     kIOSurfaceBytesPerElement, kIOSurfaceColorSpace, kIOSurfaceHeight, kIOSurfacePixelFormat,
     kIOSurfaceWidth, IOSurfaceLockOptions, IOSurfaceRef,
 };
-use objc2_quartz_core::{kCAFilterNearest, kCAGravityTopLeft, CALayer};
+use objc2_quartz_core::{kCAFilterNearest, kCAGravityBottomLeft, CALayer};
 
 use libc::kern_return_t;
 
@@ -67,7 +67,7 @@ impl Surface {
             layer.setContents(Some(&*(surface_ptr as *const AnyObject)));
             layer.setOpaque(true);
             set_contents_opaque(&layer, true);
-            layer.setContentsGravity(kCAGravityTopLeft);
+            layer.setContentsGravity(kCAGravityBottomLeft);
             layer.setMagnificationFilter(kCAFilterNearest);
 
             Ok(Surface {
