@@ -16,7 +16,7 @@ use objc2_quartz_core::{kCAFilterNearest, kCAGravityBottomLeft, CALayer};
 use libc::kern_return_t;
 
 use super::OsError;
-use crate::{Error, Result};
+use crate::{Bitmap, Error, Result};
 
 #[allow(non_upper_case_globals)]
 const kIOSurfaceSuccess: kern_return_t = 0;
@@ -85,7 +85,7 @@ impl Surface {
         })
     }
 
-    pub fn with_buffer<F: FnOnce(&mut [u32])>(&mut self, f: F) {
+    pub fn present(&self, bitmap: Bitmap) {
         let ret = unsafe { self.surface.lock(IOSurfaceLockOptions::empty(), ptr::null_mut()) };
         if ret != kIOSurfaceSuccess {
             return;
@@ -94,14 +94,20 @@ impl Surface {
         let addr = self.surface.base_address().as_ptr();
         let len = self.width * self.height;
         let buffer = unsafe { slice::from_raw_parts_mut(addr as *mut u32, len) };
-        f(buffer);
+
+        let copy_width = bitmap.width().min(self.width);
+        let copy_height = bitmap.height().min(self.height);
+
+        for row in 0..copy_height {
+            let src = &bitmap.data()[row * bitmap.width()..row * bitmap.width() + copy_width];
+            let dst = &mut buffer[row * self.width..row * self.width + copy_width];
+            dst.copy_from_slice(src);
+        }
 
         unsafe {
             self.surface.unlock(IOSurfaceLockOptions::empty(), ptr::null_mut());
         }
-    }
 
-    pub fn present(&self) {
         set_contents_changed(&self.layer);
     }
 }

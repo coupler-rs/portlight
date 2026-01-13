@@ -594,21 +594,7 @@ impl WindowState {
     pub fn present(&self, bitmap: Bitmap) {
         autoreleasepool(|_| {
             if let Some(surface) = &mut *self.surface.borrow_mut() {
-                let width = surface.width;
-                let height = surface.height;
-                let copy_width = bitmap.width().min(width);
-                let copy_height = bitmap.height().min(height);
-
-                surface.with_buffer(|buffer| {
-                    for row in 0..copy_height {
-                        let src =
-                            &bitmap.data()[row * bitmap.width()..row * bitmap.width() + copy_width];
-                        let dst = &mut buffer[row * width..row * width + copy_width];
-                        dst.copy_from_slice(src);
-                    }
-                });
-
-                surface.present();
+                surface.present(bitmap);
             }
         })
     }
