@@ -16,7 +16,6 @@ use objc2_app_kit::{
     NSBackingStoreType, NSCursor, NSEvent, NSScreen, NSTrackingArea, NSTrackingAreaOptions, NSView,
     NSWindow, NSWindowStyleMask,
 };
-use objc2_core_foundation::CFRetained;
 use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString};
 use objc2_quartz_core::{kCAFilterNearest, kCAGravityBottomLeft, CALayer};
 
@@ -541,9 +540,8 @@ impl WindowState {
                 (scale * options.size.height).round() as usize,
             )?;
 
-            let surface_ptr = CFRetained::as_ptr(&surface.surface).as_ptr();
             unsafe {
-                layer.setContents(Some(&*(surface_ptr as *const AnyObject)));
+                layer.setContents(Some(&*(surface.as_ptr() as *const AnyObject)));
             }
 
             unsafe {

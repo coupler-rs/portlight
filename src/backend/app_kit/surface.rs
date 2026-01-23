@@ -19,10 +19,10 @@ const kIOSurfaceSuccess: kern_return_t = 0;
 const BYTES_PER_ELEMENT: usize = 4;
 
 pub struct Surface {
-    pub surface: CFRetained<IOSurfaceRef>,
-    pub width: usize,
-    pub height: usize,
-    pub stride: usize,
+    surface: CFRetained<IOSurfaceRef>,
+    width: usize,
+    height: usize,
+    stride: usize,
 }
 
 impl Surface {
@@ -64,6 +64,10 @@ impl Surface {
             height,
             stride,
         })
+    }
+
+    pub fn as_ptr(&self) -> *const IOSurfaceRef {
+        CFRetained::as_ptr(&self.surface).as_ptr()
     }
 
     pub fn update(&self, bitmap: Bitmap) {
