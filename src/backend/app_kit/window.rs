@@ -9,14 +9,16 @@ use objc2::declare::ClassBuilder;
 use objc2::encode::Encoding;
 use objc2::ffi::objc_disposeClassPair;
 use objc2::rc::{autoreleasepool, Allocated, Retained};
-use objc2::runtime::{AnyClass, Bool, MessageReceiver, Sel};
+use objc2::runtime::{AnyClass, AnyObject, Bool, MessageReceiver, Sel};
 use objc2::{class, msg_send, sel, AnyThread, ClassType, Message, RefEncode};
 
 use objc2_app_kit::{
     NSBackingStoreType, NSCursor, NSEvent, NSScreen, NSTrackingArea, NSTrackingAreaOptions, NSView,
     NSWindow, NSWindowStyleMask,
 };
+use objc2_core_foundation::CFRetained;
 use objc2_foundation::{NSInteger, NSPoint, NSRect, NSSize, NSString};
+use objc2_quartz_core::{kCAFilterNearest, kCAGravityBottomLeft, CALayer};
 
 use super::surface::Surface;
 use super::OsError;
@@ -47,6 +49,18 @@ fn mouse_button_from_number(button_number: NSInteger) -> Option<MouseButton> {
         3 => Some(MouseButton::Back),
         4 => Some(MouseButton::Forward),
         _ => None,
+    }
+}
+
+fn set_contents_opaque(layer: &CALayer, contents_opaque: bool) {
+    unsafe {
+        let () = msg_send![layer, setContentsOpaque: contents_opaque];
+    }
+}
+
+fn set_contents_changed(layer: &CALayer) {
+    unsafe {
+        let () = msg_send![layer, setContentsChanged];
     }
 }
 
@@ -353,6 +367,7 @@ impl View {
 pub struct WindowState {
     view: RefCell<Option<Retained<View>>>,
     window: RefCell<Option<Retained<NSWindow>>>,
+    layer: RefCell<Option<Retained<CALayer>>>,
     surface: RefCell<Option<Surface>>,
     cursor: Cell<Cursor>,
     event_loop: EventLoop,
@@ -437,6 +452,7 @@ impl WindowState {
             let state = Rc::new(WindowState {
                 view: RefCell::new(None),
                 window: RefCell::new(None),
+                layer: RefCell::new(None),
                 surface: RefCell::new(None),
                 cursor: Cell::new(Cursor::Arrow),
                 event_loop: event_loop.clone(),
@@ -511,26 +527,37 @@ impl WindowState {
                 state.window.replace(Some(window));
             }
 
-            event_loop_state
-                .windows
-                .borrow_mut()
-                .insert(Retained::as_ptr(&view), Rc::clone(&state));
+            let layer = CALayer::layer();
+            layer.setOpaque(true);
+            set_contents_opaque(&layer, true);
+            layer.setContentsGravity(unsafe { kCAGravityBottomLeft });
+            layer.setMagnificationFilter(unsafe { kCAFilterNearest });
 
             let scale = state.scale();
+            layer.setContentsScale(scale);
 
             let surface = Surface::new(
                 (scale * options.size.width).round() as usize,
                 (scale * options.size.height).round() as usize,
             )?;
 
+            let surface_ptr = CFRetained::as_ptr(&surface.surface).as_ptr();
             unsafe {
-                view.setLayer(Some(&*surface.layer));
+                layer.setContents(Some(&*(surface_ptr as *const AnyObject)));
+            }
+
+            unsafe {
+                view.setLayer(Some(&*layer));
             }
             view.setWantsLayer(true);
 
-            surface.layer.setContentsScale(scale);
-
+            state.layer.replace(Some(layer));
             state.surface.replace(Some(surface));
+
+            event_loop_state
+                .windows
+                .borrow_mut()
+                .insert(Retained::as_ptr(&view), Rc::clone(&state));
 
             Ok(state)
         })
@@ -594,7 +621,11 @@ impl WindowState {
     pub fn present(&self, bitmap: Bitmap) {
         autoreleasepool(|_| {
             if let Some(surface) = &mut *self.surface.borrow_mut() {
-                surface.present(bitmap);
+                surface.update(bitmap);
+
+                if let Some(layer) = &*self.layer.borrow() {
+                    set_contents_changed(layer);
+                }
             }
         })
     }

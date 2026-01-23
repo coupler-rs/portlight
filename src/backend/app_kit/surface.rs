@@ -1,9 +1,5 @@
 use std::{ptr, slice};
 
-use objc2::msg_send;
-use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-
 use objc2_core_foundation::{CFDictionary, CFNumber, CFRetained, CFString};
 use objc2_core_graphics::kCGColorSpaceSRGB;
 use objc2_core_video::kCVPixelFormatType_32BGRA;
@@ -11,7 +7,6 @@ use objc2_io_surface::{
     kIOSurfaceBytesPerElement, kIOSurfaceBytesPerRow, kIOSurfaceColorSpace, kIOSurfaceHeight,
     kIOSurfacePixelFormat, kIOSurfaceWidth, IOSurfaceLockOptions, IOSurfaceRef,
 };
-use objc2_quartz_core::{kCAFilterNearest, kCAGravityBottomLeft, CALayer};
 
 use libc::kern_return_t;
 
@@ -23,20 +18,7 @@ const kIOSurfaceSuccess: kern_return_t = 0;
 
 const BYTES_PER_ELEMENT: usize = 4;
 
-fn set_contents_opaque(layer: &CALayer, contents_opaque: bool) {
-    unsafe {
-        let () = msg_send![layer, setContentsOpaque: contents_opaque];
-    }
-}
-
-fn set_contents_changed(layer: &CALayer) {
-    unsafe {
-        let () = msg_send![layer, setContentsChanged];
-    }
-}
-
 pub struct Surface {
-    pub layer: Retained<CALayer>,
     pub surface: CFRetained<IOSurfaceRef>,
     pub width: usize,
     pub height: usize,
@@ -76,18 +58,7 @@ impl Surface {
             surface.set_value(kIOSurfaceColorSpace, kCGColorSpaceSRGB);
         }
 
-        let layer = CALayer::layer();
-        let surface_ptr = CFRetained::as_ptr(&surface).as_ptr();
-        unsafe {
-            layer.setContents(Some(&*(surface_ptr as *const AnyObject)));
-        }
-        layer.setOpaque(true);
-        set_contents_opaque(&layer, true);
-        layer.setContentsGravity(unsafe { kCAGravityBottomLeft });
-        layer.setMagnificationFilter(unsafe { kCAFilterNearest });
-
         Ok(Surface {
-            layer,
             surface,
             width,
             height,
@@ -95,7 +66,7 @@ impl Surface {
         })
     }
 
-    pub fn present(&self, bitmap: Bitmap) {
+    pub fn update(&self, bitmap: Bitmap) {
         let ret = unsafe { self.surface.lock(IOSurfaceLockOptions::empty(), ptr::null_mut()) };
         if ret != kIOSurfaceSuccess {
             return;
@@ -117,7 +88,5 @@ impl Surface {
         unsafe {
             self.surface.unlock(IOSurfaceLockOptions::empty(), ptr::null_mut());
         }
-
-        set_contents_changed(&self.layer);
     }
 }
