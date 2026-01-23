@@ -155,12 +155,10 @@ impl Display {
 
 impl Drop for Display {
     fn drop(&mut self) {
-        unsafe {
-            #[allow(deprecated)]
-            self.link.stop();
+        #[allow(deprecated)]
+        self.link.stop();
 
-            self.source.invalidate();
-        }
+        self.source.invalidate();
     }
 }
 

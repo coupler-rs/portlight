@@ -421,9 +421,7 @@ impl WindowState {
             Cursor::None => self.event_loop.state.empty_cursor.clone(),
         };
 
-        unsafe {
-            ns_cursor.set();
-        }
+        ns_cursor.set();
     }
 
     pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<Rc<WindowState>> {
@@ -533,9 +531,7 @@ impl WindowState {
             layer.setMagnificationFilter(unsafe { kCAFilterNearest });
             layer.setContentsScale(state.scale());
 
-            unsafe {
-                view.setLayer(Some(&*layer));
-            }
+            view.setLayer(Some(&*layer));
             view.setWantsLayer(true);
 
             state.layer.replace(Some(layer));
@@ -653,7 +649,7 @@ impl WindowState {
 
             if let Some(view) = self.view.take() {
                 self.event_loop.state.windows.borrow_mut().remove(&Retained::as_ptr(&view));
-                unsafe { view.removeFromSuperview() };
+                view.removeFromSuperview();
             }
         })
     }

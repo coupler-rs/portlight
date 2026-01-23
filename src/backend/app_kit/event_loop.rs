@@ -80,17 +80,12 @@ impl EventLoopState {
 
             let class = View::register_class()?;
 
-            let empty_cursor = unsafe {
-                let empty_cursor_image =
-                    NSImage::initWithSize(NSImage::alloc(), NSSize::new(1.0, 1.0));
-                let empty_cursor = NSCursor::initWithImage_hotSpot(
-                    NSCursor::alloc(),
-                    &empty_cursor_image,
-                    NSPoint::new(0.0, 0.0),
-                );
-
-                empty_cursor
-            };
+            let empty_cursor_image = NSImage::initWithSize(NSImage::alloc(), NSSize::new(1.0, 1.0));
+            let empty_cursor = NSCursor::initWithImage_hotSpot(
+                NSCursor::alloc(),
+                &empty_cursor_image,
+                NSPoint::new(0.0, 0.0),
+            );
 
             let state = Rc::new(EventLoopState {
                 running: Cell::new(false),
@@ -137,21 +132,19 @@ impl EventLoopState {
                 let app = NSApplication::sharedApplication(self.mtm);
                 app.stop(None);
 
-                let event = unsafe {
-                    // Post an NSEvent to ensure that the call to [NSApplication stop] takes effect
-                    // immediately, in case we're inside a CFRunLoopTimer or CFRunLoopSource callback.
-                    NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
-                        NSEventType::ApplicationDefined,
-                        NSPoint::new(0.0, 0.0),
-                        NSEventModifierFlags::empty(),
-                        0.0,
-                        0,
-                        None,
-                        0,
-                        0,
-                        0,
-                    ).unwrap()
-                };
+                // Post an NSEvent to ensure that the call to [NSApplication stop] takes effect
+                // immediately, in case we're inside a CFRunLoopTimer or CFRunLoopSource callback.
+                let event = NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
+                    NSEventType::ApplicationDefined,
+                    NSPoint::new(0.0, 0.0),
+                    NSEventModifierFlags::empty(),
+                    0.0,
+                    0,
+                    None,
+                    0,
+                    0,
+                    0,
+                ).unwrap();
                 app.postEvent_atStart(&event, true);
             }
         })
