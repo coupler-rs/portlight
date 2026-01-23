@@ -531,18 +531,7 @@ impl WindowState {
             set_contents_opaque(&layer, true);
             layer.setContentsGravity(unsafe { kCAGravityBottomLeft });
             layer.setMagnificationFilter(unsafe { kCAFilterNearest });
-
-            let scale = state.scale();
-            layer.setContentsScale(scale);
-
-            let surface = Surface::new(
-                (scale * options.size.width).round() as usize,
-                (scale * options.size.height).round() as usize,
-            )?;
-
-            unsafe {
-                layer.setContents(Some(&*(surface.as_ptr() as *const AnyObject)));
-            }
+            layer.setContentsScale(state.scale());
 
             unsafe {
                 view.setLayer(Some(&*layer));
@@ -550,7 +539,6 @@ impl WindowState {
             view.setWantsLayer(true);
 
             state.layer.replace(Some(layer));
-            state.surface.replace(Some(surface));
 
             event_loop_state
                 .windows
@@ -618,12 +606,28 @@ impl WindowState {
 
     pub fn present(&self, bitmap: Bitmap) {
         autoreleasepool(|_| {
-            if let Some(surface) = &mut *self.surface.borrow_mut() {
-                surface.update(bitmap);
+            let mut surface = self.surface.borrow_mut();
+
+            let _ = surface.take_if(|surface| {
+                surface.width() != bitmap.width() || surface.height() != bitmap.height()
+            });
+
+            let surface = surface.get_or_insert_with(|| {
+                let surface = Surface::new(bitmap.width(), bitmap.height()).unwrap();
 
                 if let Some(layer) = &*self.layer.borrow() {
-                    set_contents_changed(layer);
+                    unsafe {
+                        layer.setContents(Some(&*(surface.as_ptr() as *const AnyObject)));
+                    }
                 }
+
+                surface
+            });
+
+            surface.update(bitmap);
+
+            if let Some(layer) = &*self.layer.borrow() {
+                set_contents_changed(layer);
             }
         })
     }
