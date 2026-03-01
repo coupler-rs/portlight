@@ -3,7 +3,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::{backend, Context, Key, Result};
+use crate::{backend, EventLoop, Response, Result};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point {
@@ -195,9 +195,12 @@ impl WindowOptions {
         self
     }
 
-    pub fn open(&self, context: &Context, key: Key) -> Result<Window> {
+    pub fn open<F>(&self, event_loop: &EventLoop, handler: F) -> Result<Window>
+    where
+        F: FnMut(WindowEvent) -> Response + 'static,
+    {
         Ok(Window {
-            state: backend::WindowState::open(self, context, key)?,
+            state: backend::WindowState::open(self, event_loop, handler)?,
             _marker: PhantomData,
         })
     }

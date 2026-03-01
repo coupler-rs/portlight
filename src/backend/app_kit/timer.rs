@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr::NonNull;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::time::Duration;
 
 use objc2_core_foundation::{
@@ -11,7 +11,7 @@ use objc2_core_foundation::{
     CFRunLoopTimerContext,
 };
 
-use crate::{Context, Event, EventLoop, Key, Result, Task};
+use crate::{EventLoop, Result};
 
 extern "C-unwind" fn retain(info: *const c_void) -> *const c_void {
     unsafe { Rc::increment_strong_count(info as *const TimerState) };
@@ -34,7 +34,7 @@ extern "C-unwind" fn callback(_timer: *mut CFRunLoopTimer, info: *mut c_void) {
     let state = unsafe { &*(info as *mut TimerState) };
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        state.handle_timer();
+        state.handler.borrow_mut()();
     }));
 
     if let Err(panic) = result {
@@ -45,27 +45,24 @@ extern "C-unwind" fn callback(_timer: *mut CFRunLoopTimer, info: *mut c_void) {
 pub struct TimerState {
     timer: Cell<Option<CFRetained<CFRunLoopTimer>>>,
     event_loop: EventLoop,
-    handler: Weak<RefCell<dyn Task>>,
-    key: Key,
+    handler: RefCell<Box<dyn FnMut()>>,
 }
 
 impl TimerState {
-    fn handle_timer(&self) -> Option<()> {
-        let task_ref = self.handler.upgrade()?;
-        let mut handler = task_ref.try_borrow_mut().ok()?;
-        let cx = Context::new(&self.event_loop, &task_ref);
-        handler.event(&cx, self.key, Event::Timer);
-        Some(())
-    }
-
-    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Rc<TimerState>> {
-        let event_loop_state = &context.event_loop.state;
+    pub fn repeat<F>(
+        event_loop: &EventLoop,
+        duration: Duration,
+        handler: F,
+    ) -> Result<Rc<TimerState>>
+    where
+        F: FnMut() + 'static,
+    {
+        let event_loop_state = &event_loop.state;
 
         let state = Rc::new(TimerState {
             timer: Cell::new(None),
-            event_loop: context.event_loop.clone(),
-            handler: Rc::downgrade(context.task),
-            key,
+            event_loop: event_loop.clone(),
+            handler: RefCell::new(Box::new(handler)),
         });
 
         let mut context = CFRunLoopTimerContext {

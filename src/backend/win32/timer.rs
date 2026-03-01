@@ -1,22 +1,27 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::time::Duration;
 
 use windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
 
-use crate::{Context, Event, EventLoop, Key, Result, Task};
+use crate::{EventLoop, Result};
 
 pub struct TimerState {
     timer_id: Cell<Option<usize>>,
     event_loop: EventLoop,
-    handler: Weak<RefCell<dyn Task>>,
-    key: Key,
+    handler: RefCell<Box<dyn FnMut()>>,
 }
 
 impl TimerState {
-    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Rc<TimerState>> {
-        let event_loop = context.event_loop;
+    pub fn repeat<F>(
+        event_loop: &EventLoop,
+        duration: Duration,
+        handler: F,
+    ) -> Result<Rc<TimerState>>
+    where
+        F: FnMut() + 'static,
+    {
         let timers = &event_loop.state.timers;
 
         let timer_id = timers.next_id.get();
@@ -25,8 +30,7 @@ impl TimerState {
         let state = Rc::new(TimerState {
             timer_id: Cell::new(Some(timer_id)),
             event_loop: event_loop.clone(),
-            handler: Rc::downgrade(context.task),
-            key,
+            handler: RefCell::new(Box::new(handler)),
         });
 
         timers.timers.borrow_mut().insert(timer_id, Rc::clone(&state));
@@ -63,10 +67,7 @@ impl Timers {
     pub fn handle_timer(&self, timer_id: usize) -> Option<()> {
         let timer_state = self.timers.borrow().get(&timer_id).cloned();
         if let Some(timer_state) = timer_state {
-            let task_ref = timer_state.handler.upgrade()?;
-            let mut handler = task_ref.try_borrow_mut().ok()?;
-            let cx = Context::new(&timer_state.event_loop, &task_ref);
-            handler.event(&cx, timer_state.key, Event::Timer);
+            timer_state.handler.borrow_mut()();
         }
 
         Some(())

@@ -1,6 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_ulong, c_void};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::{mem, ptr, slice};
 
 use x11rb::connection::Connection;
@@ -15,7 +15,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::event_loop::EventLoopState;
 use super::OsError;
 use crate::{
-    Bitmap, Context, Cursor, Error, EventLoop, Key, Point, RawWindow, Rect, Result, Size, Task,
+    Bitmap, Cursor, Error, EventLoop, Point, RawWindow, Rect, Response, Result, Size, WindowEvent,
     WindowOptions,
 };
 
@@ -38,8 +38,7 @@ pub struct WindowState {
     pub present_state: RefCell<Option<PresentState>>,
     pub expose_rects: RefCell<Vec<Rect>>,
     pub event_loop: EventLoop,
-    pub handler: Weak<RefCell<dyn Task>>,
-    pub key: Key,
+    pub handler: RefCell<Box<dyn FnMut(WindowEvent) -> Response>>,
 }
 
 impl WindowState {
@@ -102,9 +101,14 @@ impl WindowState {
         }
     }
 
-    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<Rc<WindowState>> {
-        let event_loop = context.event_loop;
-
+    pub fn open<F>(
+        options: &WindowOptions,
+        event_loop: &EventLoop,
+        handler: F,
+    ) -> Result<Rc<WindowState>>
+    where
+        F: FnMut(WindowEvent) -> Response + 'static,
+    {
         let event_loop_state = &event_loop.state;
         let connection = &event_loop_state.connection;
 
@@ -201,9 +205,8 @@ impl WindowState {
             shm_state: RefCell::new(shm_state),
             present_state: RefCell::new(present_state),
             expose_rects: RefCell::new(Vec::new()),
-            event_loop: context.event_loop.clone(),
-            handler: Rc::downgrade(context.task),
-            key,
+            event_loop: event_loop.clone(),
+            handler: RefCell::new(Box::new(handler)),
         });
 
         event_loop_state.windows.borrow_mut().insert(window_id, Rc::clone(&state));

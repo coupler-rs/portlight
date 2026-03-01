@@ -14,8 +14,7 @@ use x11rb::{cursor, protocol, resource_manager};
 use super::timer::Timers;
 use super::window::WindowState;
 use crate::{
-    Context, Cursor, Error, Event, EventLoopOptions, MouseButton, Point, Rect, Response, Result,
-    WindowEvent,
+    Cursor, Error, EventLoopOptions, MouseButton, Point, Rect, Response, Result, WindowEvent,
 };
 
 fn mouse_button_from_code(code: Button) -> Option<MouseButton> {
@@ -191,10 +190,8 @@ impl EventLoopState {
     }
 
     fn handle_event(&self, state: &WindowState, event: WindowEvent) -> Option<Response> {
-        let task_ref = state.handler.upgrade()?;
-        let mut handler = task_ref.try_borrow_mut().ok()?;
-        let cx = Context::new(&state.event_loop, &task_ref);
-        Some(handler.event(&cx, state.key, Event::Window(event)))
+        let mut handler = state.handler.try_borrow_mut().ok()?;
+        Some(handler(event))
     }
 
     fn drain_events(&self) -> Result<()> {

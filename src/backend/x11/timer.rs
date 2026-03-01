@@ -1,10 +1,10 @@
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use crate::{Context, Event, EventLoop, Key, Result, Task};
+use crate::{EventLoop, Result};
 
 pub type TimerId = usize;
 
@@ -12,38 +12,38 @@ pub struct TimerState {
     timer_id: TimerId,
     duration: Duration,
     event_loop: EventLoop,
-    handler: Weak<RefCell<dyn Task>>,
-    key: Key,
+    handler: RefCell<Box<dyn FnMut()>>,
 }
 
 impl TimerState {
     fn handle_timer(&self) -> Option<()> {
-        let task_ref = self.handler.upgrade()?;
-        let mut handler = task_ref.try_borrow_mut().ok()?;
-        let cx = Context::new(&self.event_loop, &task_ref);
-        handler.event(&cx, self.key, Event::Timer);
+        self.handler.borrow_mut()();
         Some(())
     }
 
-    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Rc<TimerState>> {
-        let event_loop_state = &context.event_loop.state;
-
+    pub fn repeat<F>(
+        event_loop: &EventLoop,
+        duration: Duration,
+        handler: F,
+    ) -> Result<Rc<TimerState>>
+    where
+        F: FnMut() + 'static,
+    {
         let now = Instant::now();
 
-        let timer_id = event_loop_state.timers.next_id.get();
-        event_loop_state.timers.next_id.set(timer_id + 1);
+        let timer_id = event_loop.state.timers.next_id.get();
+        event_loop.state.timers.next_id.set(timer_id + 1);
 
         let state = Rc::new(TimerState {
             timer_id,
             duration,
-            event_loop: context.event_loop.clone(),
-            handler: Rc::downgrade(context.task),
-            key,
+            event_loop: event_loop.clone(),
+            handler: RefCell::new(Box::new(handler)),
         });
 
-        event_loop_state.timers.timers.borrow_mut().insert(timer_id, Rc::clone(&state));
+        event_loop.state.timers.timers.borrow_mut().insert(timer_id, Rc::clone(&state));
 
-        event_loop_state.timers.queue.borrow_mut().push(QueueEntry {
+        event_loop.state.timers.queue.borrow_mut().push(QueueEntry {
             time: now + duration,
             timer_id,
         });

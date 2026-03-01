@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::time::Duration;
 
-use crate::{backend, Context, Key, Result};
+use crate::{backend, EventLoop, Result};
 
 pub struct Timer {
     pub(crate) state: Rc<backend::TimerState>,
@@ -12,8 +12,11 @@ pub struct Timer {
 }
 
 impl Timer {
-    pub fn repeat(duration: Duration, context: &Context, key: Key) -> Result<Timer> {
-        let state = backend::TimerState::repeat(duration, context, key)?;
+    pub fn repeat<F>(event_loop: &EventLoop, duration: Duration, handler: F) -> Result<Timer>
+    where
+        F: FnMut() + 'static,
+    {
+        let state = backend::TimerState::repeat(event_loop, duration, handler)?;
 
         Ok(Timer {
             state,

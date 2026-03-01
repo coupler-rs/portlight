@@ -3,7 +3,7 @@ use std::ffi::c_void;
 use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
 use std::panic::{self, AssertUnwindSafe};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 
 use objc2::declare::ClassBuilder;
 use objc2::encode::Encoding;
@@ -22,8 +22,8 @@ use objc2_quartz_core::{kCAFilterNearest, kCAGravityBottomLeft, CALayer};
 use super::surface::Surface;
 use super::OsError;
 use crate::{
-    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow, Rect,
-    Response, Result, Size, Task, WindowEvent, WindowOptions,
+    Bitmap, Cursor, Error, EventLoop, MouseButton, Point, RawWindow, Rect, Response, Result, Size,
+    WindowEvent, WindowOptions,
 };
 
 fn class_name() -> CString {
@@ -370,8 +370,7 @@ pub struct WindowState {
     surface: RefCell<Option<Surface>>,
     cursor: Cell<Cursor>,
     event_loop: EventLoop,
-    handler: Weak<RefCell<dyn Task>>,
-    key: Key,
+    handler: RefCell<Box<dyn FnMut(WindowEvent) -> Response>>,
 }
 
 impl WindowState {
@@ -384,10 +383,8 @@ impl WindowState {
     }
 
     pub fn handle_event(&self, event: WindowEvent) -> Option<Response> {
-        let task_ref = self.handler.upgrade()?;
-        let mut handler = task_ref.try_borrow_mut().ok()?;
-        let cx = Context::new(&self.event_loop, &task_ref);
-        Some(handler.event(&cx, self.key, Event::Window(event)))
+        let mut handler = self.handler.try_borrow_mut().ok()?;
+        Some(handler(event))
     }
 
     fn update_cursor(&self) {
@@ -424,10 +421,15 @@ impl WindowState {
         ns_cursor.set();
     }
 
-    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<Rc<WindowState>> {
+    pub fn open<F>(
+        options: &WindowOptions,
+        event_loop: &EventLoop,
+        handler: F,
+    ) -> Result<Rc<WindowState>>
+    where
+        F: FnMut(WindowEvent) -> Response + 'static,
+    {
         autoreleasepool(|_| {
-            let event_loop = context.event_loop;
-
             let event_loop_state = &event_loop.state;
 
             let parent_view = if let Some(parent) = options.parent {
@@ -453,8 +455,7 @@ impl WindowState {
                 surface: RefCell::new(None),
                 cursor: Cell::new(Cursor::Arrow),
                 event_loop: event_loop.clone(),
-                handler: Rc::downgrade(context.task),
-                key,
+                handler: RefCell::new(Box::new(handler)),
             });
 
             let view: Allocated<View> = unsafe { msg_send![event_loop_state.class, alloc] };

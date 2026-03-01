@@ -3,7 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::ffi::{c_int, c_void};
 use std::mem::MaybeUninit;
 use std::panic::{self, AssertUnwindSafe};
-use std::rc::{Rc, Weak};
+use std::rc::Rc;
 use std::{mem, ptr, slice};
 
 use windows::core::PCWSTR;
@@ -22,8 +22,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use super::event_loop::EventLoopState;
 use super::{class_name, hinstance, to_wstring};
 use crate::{
-    Bitmap, Context, Cursor, Error, Event, EventLoop, Key, MouseButton, Point, RawWindow, Rect,
-    Response, Result, Size, Task, WindowEvent, WindowOptions,
+    Bitmap, Cursor, Error, EventLoop, MouseButton, Point, RawWindow, Rect, Response, Result, Size,
+    WindowEvent, WindowOptions,
 };
 
 #[allow(non_snake_case)]
@@ -297,8 +297,7 @@ pub struct WindowState {
     mouse_in_window: Cell<bool>,
     cursor: Cell<Cursor>,
     event_loop: EventLoop,
-    handler: Weak<RefCell<dyn Task>>,
-    key: Key,
+    handler: RefCell<Box<dyn FnMut(WindowEvent) -> Response>>,
 }
 
 impl WindowState {
@@ -333,15 +332,18 @@ impl WindowState {
     }
 
     pub fn handle_event(&self, event: WindowEvent) -> Option<Response> {
-        let task_ref = self.handler.upgrade()?;
-        let mut handler = task_ref.try_borrow_mut().ok()?;
-        let cx = Context::new(&self.event_loop, &task_ref);
-        Some(handler.event(&cx, self.key, Event::Window(event)))
+        let mut handler = self.handler.try_borrow_mut().ok()?;
+        Some(handler(event))
     }
 
-    pub fn open(options: &WindowOptions, context: &Context, key: Key) -> Result<Rc<WindowState>> {
-        let event_loop = context.event_loop;
-
+    pub fn open<F>(
+        options: &WindowOptions,
+        event_loop: &EventLoop,
+        handler: F,
+    ) -> Result<Rc<WindowState>>
+    where
+        F: FnMut(WindowEvent) -> Response + 'static,
+    {
         unsafe {
             let window_name = to_wstring(&options.title);
 
@@ -415,8 +417,7 @@ impl WindowState {
                 mouse_in_window: Cell::new(false),
                 cursor: Cell::new(Cursor::Arrow),
                 event_loop: event_loop.clone(),
-                handler: Rc::downgrade(context.task),
-                key,
+                handler: RefCell::new(Box::new(handler)),
             });
 
             let state_ptr = Rc::into_raw(Rc::clone(&state));
