@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::{backend, Result, Task, TaskHandle};
+use crate::{backend, Result};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum EventLoopMode {
@@ -51,13 +51,6 @@ pub struct EventLoop {
 impl EventLoop {
     pub fn new() -> Result<EventLoop> {
         EventLoopOptions::default().build()
-    }
-
-    pub fn spawn<T>(&self, task: T) -> TaskHandle<T>
-    where
-        T: Task + 'static,
-    {
-        TaskHandle::spawn(&self, task)
     }
 
     pub fn run(&self) -> Result<()> {

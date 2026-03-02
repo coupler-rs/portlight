@@ -3,7 +3,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-use crate::{backend, EventLoop, Response, Result};
+use crate::{backend, EventLoop, Result};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Point {
@@ -142,6 +142,12 @@ pub enum WindowEvent<'a> {
     MouseDown(MouseButton),
     MouseUp(MouseButton),
     Scroll(Point),
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Response {
+    Capture,
+    Ignore,
 }
 
 #[derive(Copy, Clone, Debug)]
