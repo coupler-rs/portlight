@@ -15,7 +15,7 @@ use objc2_foundation::{ns_string, NSNumber};
 
 use super::event_loop::EventLoopState;
 use super::window::View;
-use crate::WindowEvent;
+use crate::Event;
 
 fn display_from_screen(screen: &NSScreen) -> Option<CGDirectDisplayID> {
     let number = screen.deviceDescription().objectForKey(ns_string!("NSScreenNumber"))?;
@@ -78,7 +78,7 @@ extern "C-unwind" fn perform(info: *mut c_void) {
                 if let Some(view) = window_state.view() {
                     let display = display_from_view(&*view);
                     if display == Some(state.display_id) {
-                        window_state.handle_event(WindowEvent::Frame);
+                        window_state.handle_event(Event::Frame);
                     }
                 }
             }

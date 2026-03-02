@@ -130,7 +130,7 @@ pub enum Cursor {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum WindowEvent<'a> {
+pub enum Event<'a> {
     Expose(&'a [Rect]),
     Frame,
     Close,
@@ -203,7 +203,7 @@ impl WindowOptions {
 
     pub fn open<F>(&self, event_loop: &EventLoop, handler: F) -> Result<Window>
     where
-        F: FnMut(WindowEvent) -> Response + 'static,
+        F: FnMut(Event) -> Response + 'static,
     {
         Ok(Window {
             state: backend::WindowState::open(self, event_loop, handler)?,

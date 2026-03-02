@@ -11,6 +11,6 @@ pub use error::{Error, Result};
 pub use event_loop::{EventLoop, EventLoopMode, EventLoopOptions};
 pub use timer::Timer;
 pub use window::{
-    Bitmap, Cursor, MouseButton, Point, RawWindow, Rect, Response, Size, Window, WindowEvent,
+    Bitmap, Cursor, Event, MouseButton, Point, RawWindow, Rect, Response, Size, Window,
     WindowOptions,
 };

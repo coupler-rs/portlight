@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use portlight::{Bitmap, EventLoop, Response, Size, Timer, Window, WindowEvent, WindowOptions};
+use portlight::{Bitmap, Event, EventLoop, Response, Size, Timer, Window, WindowOptions};
 
 const WIDTH: usize = 512;
 const HEIGHT: usize = 512;
@@ -23,12 +23,12 @@ impl Drop for State {
 }
 
 impl State {
-    fn handle_event(&mut self, event: WindowEvent) -> Response {
+    fn handle_event(&mut self, event: Event) -> Response {
         match event {
-            WindowEvent::Expose(rects) => {
+            Event::Expose(rects) => {
                 println!("expose: {:?}", rects);
             }
-            WindowEvent::Frame => {
+            Event::Frame => {
                 println!("frame");
 
                 let window = self.window.as_ref().unwrap();
@@ -40,34 +40,34 @@ impl State {
 
                 window.present(Bitmap::new(&self.framebuffer, self.width, self.height));
             }
-            WindowEvent::GainFocus => {
+            Event::GainFocus => {
                 println!("gain focus");
             }
-            WindowEvent::LoseFocus => {
+            Event::LoseFocus => {
                 println!("lose focus");
             }
-            WindowEvent::MouseEnter => {
+            Event::MouseEnter => {
                 println!("mouse enter");
             }
-            WindowEvent::MouseExit => {
+            Event::MouseExit => {
                 println!("mouse exit");
             }
-            WindowEvent::MouseMove(pos) => {
+            Event::MouseMove(pos) => {
                 println!("mouse move: {:?}", pos);
             }
-            WindowEvent::MouseDown(btn) => {
+            Event::MouseDown(btn) => {
                 println!("mouse down: {:?}", btn);
                 return Response::Capture;
             }
-            WindowEvent::MouseUp(btn) => {
+            Event::MouseUp(btn) => {
                 println!("mouse up: {:?}", btn);
                 return Response::Capture;
             }
-            WindowEvent::Scroll(delta) => {
+            Event::Scroll(delta) => {
                 println!("scroll: {:?}", delta);
                 return Response::Capture;
             }
-            WindowEvent::Close => {
+            Event::Close => {
                 self.event_loop.exit();
             }
         }

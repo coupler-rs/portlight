@@ -13,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
 use super::event_loop::EventLoopState;
 use super::WM_USER_VBLANK;
-use crate::WindowEvent;
+use crate::Event;
 
 struct ThreadState {
     pending: AtomicBool,
@@ -101,7 +101,7 @@ impl VsyncThreads {
             if window_monitor == monitor {
                 let window_state = event_loop_state.windows.borrow().get(&hwnd).cloned();
                 if let Some(window_state) = window_state {
-                    window_state.handle_event(WindowEvent::Frame);
+                    window_state.handle_event(Event::Frame);
                 }
             }
         }

@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use portlight::{
-    Bitmap, EventLoop, EventLoopMode, EventLoopOptions, Point, Response, Size, Window, WindowEvent,
+    Bitmap, Event, EventLoop, EventLoopMode, EventLoopOptions, Point, Response, Size, Window,
     WindowOptions,
 };
 
@@ -13,9 +13,9 @@ struct ParentState {
 }
 
 impl ParentState {
-    fn handle_event(&mut self, event: WindowEvent) -> Response {
+    fn handle_event(&mut self, event: Event) -> Response {
         match event {
-            WindowEvent::Frame => {
+            Event::Frame => {
                 let window = &self.window.as_ref().unwrap();
 
                 let scale = window.scale();
@@ -25,7 +25,7 @@ impl ParentState {
                 self.framebuffer.resize(width * height, 0xFF00FFFF);
                 window.present(Bitmap::new(&self.framebuffer, width, height));
             }
-            WindowEvent::Close => {
+            Event::Close => {
                 self.event_loop.exit();
             }
             _ => {}
@@ -41,9 +41,9 @@ struct ChildState {
 }
 
 impl ChildState {
-    fn handle_event(&mut self, event: WindowEvent) -> Response {
+    fn handle_event(&mut self, event: Event) -> Response {
         match event {
-            WindowEvent::Frame => {
+            Event::Frame => {
                 let window = &self.window.as_ref().unwrap();
 
                 let scale = window.scale();

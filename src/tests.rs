@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::{EventLoop, Response, Size, Window, WindowEvent, WindowOptions};
+use crate::{Event, EventLoop, Response, Size, Window, WindowOptions};
 
 pub fn leak() {
     struct State {
@@ -9,7 +9,7 @@ pub fn leak() {
     }
 
     impl State {
-        fn handle_event(&mut self, _event: WindowEvent) -> Response {
+        fn handle_event(&mut self, _event: Event) -> Response {
             Response::Ignore
         }
     }

@@ -15,7 +15,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::event_loop::EventLoopState;
 use super::OsError;
 use crate::{
-    Bitmap, Cursor, Error, EventLoop, Point, RawWindow, Rect, Response, Result, Size, WindowEvent,
+    Bitmap, Cursor, Error, Event, EventLoop, Point, RawWindow, Rect, Response, Result, Size,
     WindowOptions,
 };
 
@@ -38,7 +38,7 @@ pub struct WindowState {
     pub present_state: RefCell<Option<PresentState>>,
     pub expose_rects: RefCell<Vec<Rect>>,
     pub event_loop: EventLoop,
-    pub handler: RefCell<Box<dyn FnMut(WindowEvent) -> Response>>,
+    pub handler: RefCell<Box<dyn FnMut(Event) -> Response>>,
 }
 
 impl WindowState {
@@ -107,7 +107,7 @@ impl WindowState {
         handler: F,
     ) -> Result<Rc<WindowState>>
     where
-        F: FnMut(WindowEvent) -> Response + 'static,
+        F: FnMut(Event) -> Response + 'static,
     {
         let event_loop_state = &event_loop.state;
         let connection = &event_loop_state.connection;
