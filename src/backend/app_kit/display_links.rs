@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::panic::{self, AssertUnwindSafe};
 use std::ptr::{self, NonNull};
 use std::rc::{Rc, Weak};
 
@@ -53,14 +52,7 @@ extern "C-unwind" fn retain(info: *const c_void) -> *const c_void {
 }
 
 extern "C-unwind" fn release(info: *const c_void) {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        unsafe { Rc::decrement_strong_count(info as *const DisplayState) };
-    }));
-
-    // If a panic occurs while dropping the Rc<DisplayState>, the only thing left to do is abort.
-    if let Err(_panic) = result {
-        std::process::abort();
-    }
+    unsafe { Rc::decrement_strong_count(info as *const DisplayState) };
 }
 
 extern "C-unwind" fn perform(info: *mut c_void) {
@@ -70,23 +62,17 @@ extern "C-unwind" fn perform(info: *mut c_void) {
         return;
     };
 
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        let windows: Vec<*const View> = event_loop_state.windows.borrow().keys().copied().collect();
-        for ptr in windows {
-            let window_state = event_loop_state.windows.borrow().get(&ptr).cloned();
-            if let Some(window_state) = window_state {
-                if let Some(view) = window_state.view() {
-                    let display = display_from_view(&*view);
-                    if display == Some(state.display_id) {
-                        window_state.handle_event(Event::Frame);
-                    }
+    let windows: Vec<*const View> = event_loop_state.windows.borrow().keys().copied().collect();
+    for ptr in windows {
+        let window_state = event_loop_state.windows.borrow().get(&ptr).cloned();
+        if let Some(window_state) = window_state {
+            if let Some(view) = window_state.view() {
+                let display = display_from_view(&*view);
+                if display == Some(state.display_id) {
+                    window_state.handle_event(Event::Frame);
                 }
             }
         }
-    }));
-
-    if let Err(panic) = result {
-        event_loop_state.propagate_panic(panic);
     }
 }
 

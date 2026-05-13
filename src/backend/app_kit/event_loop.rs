@@ -1,7 +1,5 @@
-use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::panic;
 use std::rc::Rc;
 
 use objc2::rc::{autoreleasepool, Retained};
@@ -43,25 +41,12 @@ impl<'a> Drop for RunGuard<'a> {
 
 pub struct EventLoopState {
     pub running: Cell<bool>,
-    pub panic: Cell<Option<Box<dyn Any + Send>>>,
     pub class: &'static AnyClass,
     pub empty_cursor: Retained<NSCursor>,
     pub timers: Timers,
     pub display_links: DisplayLinks,
     pub windows: RefCell<HashMap<*const View, Rc<WindowState>>>,
     pub mtm: MainThreadMarker,
-}
-
-impl EventLoopState {
-    pub(crate) fn propagate_panic(&self, panic: Box<dyn Any + Send + 'static>) {
-        // If we own the event loop, exit and propagate the panic upwards. Otherwise, just abort.
-        if self.running.get() {
-            self.panic.set(Some(panic));
-            self.exit();
-        } else {
-            std::process::abort();
-        }
-    }
 }
 
 impl Drop for EventLoopState {
@@ -89,7 +74,6 @@ impl EventLoopState {
 
             let state = Rc::new(EventLoopState {
                 running: Cell::new(false),
-                panic: Cell::new(None),
                 class,
                 empty_cursor,
                 timers: Timers::new(),
@@ -117,10 +101,6 @@ impl EventLoopState {
 
             let app = NSApplication::sharedApplication(self.mtm);
             app.run();
-
-            if let Some(panic) = self.panic.take() {
-                panic::resume_unwind(panic);
-            }
 
             Ok(())
         })
@@ -154,10 +134,6 @@ impl EventLoopState {
         let _run_guard = RunGuard::new(&self.running)?;
 
         // TODO: poll events
-
-        if let Some(panic) = self.panic.take() {
-            panic::resume_unwind(panic);
-        }
 
         Ok(())
     }

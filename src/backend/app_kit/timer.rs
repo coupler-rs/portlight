@@ -1,7 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
-use std::panic::{self, AssertUnwindSafe};
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::time::Duration;
@@ -20,26 +19,13 @@ extern "C-unwind" fn retain(info: *const c_void) -> *const c_void {
 }
 
 extern "C-unwind" fn release(info: *const c_void) {
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        unsafe { Rc::decrement_strong_count(info as *const TimerState) };
-    }));
-
-    // If a panic occurs while dropping the Rc<TimerState>, the only thing left to do is abort.
-    if let Err(_panic) = result {
-        std::process::abort();
-    }
+    unsafe { Rc::decrement_strong_count(info as *const TimerState) };
 }
 
 extern "C-unwind" fn callback(_timer: *mut CFRunLoopTimer, info: *mut c_void) {
     let state = unsafe { &*(info as *mut TimerState) };
 
-    let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        state.handler.borrow_mut()();
-    }));
-
-    if let Err(panic) = result {
-        state.event_loop.state.propagate_panic(panic);
-    }
+    state.handler.borrow_mut()();
 }
 
 pub struct TimerState {

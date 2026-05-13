@@ -2,7 +2,6 @@ use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::ffi::CString;
 use std::ops::{Deref, DerefMut};
-use std::panic::{self, AssertUnwindSafe};
 use std::rc::Rc;
 
 use objc2::declare::ClassBuilder;
@@ -102,73 +101,76 @@ impl View {
         unsafe {
             builder.add_method(
                 sel!(acceptsFirstMouse:),
-                Self::accepts_first_mouse as unsafe extern "C" fn(_, _, _) -> _,
+                Self::accepts_first_mouse as unsafe extern "C-unwind" fn(_, _, _) -> _,
             );
             builder.add_method(
                 sel!(isFlipped),
-                Self::is_flipped as unsafe extern "C" fn(_, _) -> _,
+                Self::is_flipped as unsafe extern "C-unwind" fn(_, _) -> _,
             );
             builder.add_method(
                 sel!(mouseEntered:),
-                Self::mouse_entered as unsafe extern "C" fn(_, _, _),
+                Self::mouse_entered as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(mouseExited:),
-                Self::mouse_exited as unsafe extern "C" fn(_, _, _),
+                Self::mouse_exited as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(mouseMoved:),
-                Self::mouse_moved as unsafe extern "C" fn(_, _, _),
+                Self::mouse_moved as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(mouseDragged:),
-                Self::mouse_moved as unsafe extern "C" fn(_, _, _),
+                Self::mouse_moved as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(rightMouseDragged:),
-                Self::mouse_moved as unsafe extern "C" fn(_, _, _),
+                Self::mouse_moved as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(otherMouseDragged:),
-                Self::mouse_moved as unsafe extern "C" fn(_, _, _),
+                Self::mouse_moved as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(mouseDown:),
-                Self::mouse_down as unsafe extern "C" fn(_, _, _),
+                Self::mouse_down as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(mouseUp:),
-                Self::mouse_up as unsafe extern "C" fn(_, _, _),
+                Self::mouse_up as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(rightMouseDown:),
-                Self::right_mouse_down as unsafe extern "C" fn(_, _, _),
+                Self::right_mouse_down as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(rightMouseUp:),
-                Self::right_mouse_up as unsafe extern "C" fn(_, _, _),
+                Self::right_mouse_up as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(otherMouseDown:),
-                Self::other_mouse_down as unsafe extern "C" fn(_, _, _),
+                Self::other_mouse_down as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(otherMouseUp:),
-                Self::other_mouse_up as unsafe extern "C" fn(_, _, _),
+                Self::other_mouse_up as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(scrollWheel:),
-                Self::scroll_wheel as unsafe extern "C" fn(_, _, _),
+                Self::scroll_wheel as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(cursorUpdate:),
-                Self::cursor_update as unsafe extern "C" fn(_, _, _),
+                Self::cursor_update as unsafe extern "C-unwind" fn(_, _, _),
             );
             builder.add_method(
                 sel!(windowShouldClose:),
-                Self::window_should_close as unsafe extern "C" fn(_, _, _) -> _,
+                Self::window_should_close as unsafe extern "C-unwind" fn(_, _, _) -> _,
             );
-            builder.add_method(sel!(dealloc), View::dealloc as unsafe extern "C" fn(_, _));
+            builder.add_method(
+                sel!(dealloc),
+                View::dealloc as unsafe extern "C-unwind" fn(_, _),
+            );
         }
 
         Ok(builder.register())
@@ -187,177 +189,141 @@ impl View {
         unsafe { &*(self.state_ivar().get() as *const WindowState) }
     }
 
-    fn catch_unwind<F: FnOnce()>(&self, f: F) {
-        let result = panic::catch_unwind(AssertUnwindSafe(f));
-
-        if let Err(panic) = result {
-            self.state().event_loop.state.propagate_panic(panic);
-        }
-    }
-
     pub fn retain(&self) -> Retained<View> {
         unsafe { Retained::retain(self as *const View as *mut View) }.unwrap()
     }
 
-    unsafe extern "C" fn accepts_first_mouse(&self, _: Sel, _event: Option<&NSEvent>) -> Bool {
+    unsafe extern "C-unwind" fn accepts_first_mouse(
+        &self,
+        _: Sel,
+        _event: Option<&NSEvent>,
+    ) -> Bool {
         Bool::YES
     }
 
-    unsafe extern "C" fn is_flipped(&self, _: Sel) -> Bool {
+    unsafe extern "C-unwind" fn is_flipped(&self, _: Sel) -> Bool {
         Bool::YES
     }
 
-    unsafe extern "C" fn mouse_entered(&self, _: Sel, _event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            self.state().handle_event(Event::MouseEnter);
-        });
+    unsafe extern "C-unwind" fn mouse_entered(&self, _: Sel, _event: Option<&NSEvent>) {
+        self.state().handle_event(Event::MouseEnter);
     }
 
-    unsafe extern "C" fn mouse_exited(&self, _: Sel, _event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            self.state().handle_event(Event::MouseExit);
-        });
+    unsafe extern "C-unwind" fn mouse_exited(&self, _: Sel, _event: Option<&NSEvent>) {
+        self.state().handle_event(Event::MouseExit);
     }
 
-    unsafe extern "C" fn mouse_moved(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let Some(event) = event else {
-                return;
-            };
+    unsafe extern "C-unwind" fn mouse_moved(&self, _: Sel, event: Option<&NSEvent>) {
+        let Some(event) = event else {
+            return;
+        };
 
-            let point = self.convertPoint_fromView(event.locationInWindow(), None);
-            self.state().handle_event(Event::MouseMove(Point {
-                x: point.x,
-                y: point.y,
-            }));
-        });
+        let point = self.convertPoint_fromView(event.locationInWindow(), None);
+        self.state().handle_event(Event::MouseMove(Point {
+            x: point.x,
+            y: point.y,
+        }));
     }
 
-    unsafe extern "C" fn mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let result = self.state().handle_event(Event::MouseDown(MouseButton::Left));
+    unsafe extern "C-unwind" fn mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
+        let result = self.state().handle_event(Event::MouseDown(MouseButton::Left));
 
-            if result != Some(Response::Capture) {
-                let () = msg_send![super(self, NSView::class()), mouseDown: event];
-            }
-        });
+        if result != Some(Response::Capture) {
+            let () = msg_send![super(self, NSView::class()), mouseDown: event];
+        }
     }
 
-    unsafe extern "C" fn mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let result = self.state().handle_event(Event::MouseUp(MouseButton::Left));
+    unsafe extern "C-unwind" fn mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
+        let result = self.state().handle_event(Event::MouseUp(MouseButton::Left));
 
-            if result != Some(Response::Capture) {
-                let () = msg_send![super(self, NSView::class()), mouseUp: event];
-            }
-        });
+        if result != Some(Response::Capture) {
+            let () = msg_send![super(self, NSView::class()), mouseUp: event];
+        }
     }
 
-    unsafe extern "C" fn right_mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let result = self.state().handle_event(Event::MouseDown(MouseButton::Right));
+    unsafe extern "C-unwind" fn right_mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
+        let result = self.state().handle_event(Event::MouseDown(MouseButton::Right));
 
-            if result != Some(Response::Capture) {
-                let () = msg_send![super(self, NSView::class()), rightMouseDown: event];
-            }
-        });
+        if result != Some(Response::Capture) {
+            let () = msg_send![super(self, NSView::class()), rightMouseDown: event];
+        }
     }
 
-    unsafe extern "C" fn right_mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let result = self.state().handle_event(Event::MouseUp(MouseButton::Right));
+    unsafe extern "C-unwind" fn right_mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
+        let result = self.state().handle_event(Event::MouseUp(MouseButton::Right));
 
-            if result != Some(Response::Capture) {
-                let () = msg_send![super(self, NSView::class()), rightMouseUp: event];
-            }
-        });
+        if result != Some(Response::Capture) {
+            let () = msg_send![super(self, NSView::class()), rightMouseUp: event];
+        }
     }
 
-    unsafe extern "C" fn other_mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let Some(event) = event else {
-                return;
-            };
+    unsafe extern "C-unwind" fn other_mouse_down(&self, _: Sel, event: Option<&NSEvent>) {
+        let Some(event) = event else {
+            return;
+        };
 
-            let button_number = event.buttonNumber();
-            let result = if let Some(button) = mouse_button_from_number(button_number) {
-                self.state().handle_event(Event::MouseDown(button))
-            } else {
-                None
-            };
+        let button_number = event.buttonNumber();
+        let result = if let Some(button) = mouse_button_from_number(button_number) {
+            self.state().handle_event(Event::MouseDown(button))
+        } else {
+            None
+        };
 
-            if result != Some(Response::Capture) {
-                let () = msg_send![super(self, NSView::class()), otherMouseDown: event];
-            }
-        });
+        if result != Some(Response::Capture) {
+            let () = msg_send![super(self, NSView::class()), otherMouseDown: event];
+        }
     }
 
-    unsafe extern "C" fn other_mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let Some(event) = event else {
-                return;
-            };
+    unsafe extern "C-unwind" fn other_mouse_up(&self, _: Sel, event: Option<&NSEvent>) {
+        let Some(event) = event else {
+            return;
+        };
 
-            let button_number = event.buttonNumber();
-            let result = if let Some(button) = mouse_button_from_number(button_number) {
-                self.state().handle_event(Event::MouseUp(button))
-            } else {
-                None
-            };
+        let button_number = event.buttonNumber();
+        let result = if let Some(button) = mouse_button_from_number(button_number) {
+            self.state().handle_event(Event::MouseUp(button))
+        } else {
+            None
+        };
 
-            if result != Some(Response::Capture) {
-                let () = msg_send![super(self, NSView::class()), otherMouseUp: event];
-            }
-        });
+        if result != Some(Response::Capture) {
+            let () = msg_send![super(self, NSView::class()), otherMouseUp: event];
+        }
     }
 
-    unsafe extern "C" fn scroll_wheel(&self, _: Sel, event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            let Some(event) = event else {
-                return;
-            };
+    unsafe extern "C-unwind" fn scroll_wheel(&self, _: Sel, event: Option<&NSEvent>) {
+        let Some(event) = event else {
+            return;
+        };
 
-            let dx = event.scrollingDeltaX();
-            let dy = event.scrollingDeltaY();
-            let delta = if event.hasPreciseScrollingDeltas() {
-                Point::new(dx, dy)
-            } else {
-                Point::new(32.0 * dx, 32.0 * dy)
-            };
-            let result = self.state().handle_event(Event::Scroll(delta));
+        let dx = event.scrollingDeltaX();
+        let dy = event.scrollingDeltaY();
+        let delta = if event.hasPreciseScrollingDeltas() {
+            Point::new(dx, dy)
+        } else {
+            Point::new(32.0 * dx, 32.0 * dy)
+        };
+        let result = self.state().handle_event(Event::Scroll(delta));
 
-            if result != Some(Response::Capture) {
-                let () = msg_send![super(self, NSView::class()), scrollWheel: event];
-            }
-        });
+        if result != Some(Response::Capture) {
+            let () = msg_send![super(self, NSView::class()), scrollWheel: event];
+        }
     }
 
-    unsafe extern "C" fn cursor_update(&self, _: Sel, _event: Option<&NSEvent>) {
-        self.catch_unwind(|| {
-            self.state().update_cursor();
-        });
+    unsafe extern "C-unwind" fn cursor_update(&self, _: Sel, _event: Option<&NSEvent>) {
+        self.state().update_cursor();
     }
 
-    unsafe extern "C" fn window_should_close(&self, _: Sel, _sender: &NSWindow) -> Bool {
-        self.catch_unwind(|| {
-            self.state().handle_event(Event::Close);
-        });
+    unsafe extern "C-unwind" fn window_should_close(&self, _: Sel, _sender: &NSWindow) -> Bool {
+        self.state().handle_event(Event::Close);
 
         Bool::NO
     }
 
-    unsafe extern "C" fn dealloc(this: *mut Self, _: Sel) {
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            drop(Rc::from_raw(
-                (*this).state_ivar().get() as *const WindowState
-            ));
-        }));
-
-        // If a panic occurs while dropping the Rc<WindowState>, the only thing left to do is
-        // abort.
-        if let Err(_panic) = result {
-            std::process::abort();
-        }
+    unsafe extern "C-unwind" fn dealloc(this: *mut Self, _: Sel) {
+        drop(Rc::from_raw(
+            (*this).state_ivar().get() as *const WindowState
+        ));
 
         let () = msg_send![super(this, NSView::class()), dealloc];
     }
