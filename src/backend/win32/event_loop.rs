@@ -1,7 +1,5 @@
-use std::any::Any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::panic::{self, AssertUnwindSafe};
 use std::rc::{Rc, Weak};
 use std::{mem, ptr};
 
@@ -69,7 +67,7 @@ pub unsafe extern "system" fn message_wnd_proc(
         return DefWindowProcW(hwnd, msg, wparam, lparam);
     };
 
-    let result = panic::catch_unwind(AssertUnwindSafe(|| match msg {
+    match msg {
         msg::WM_TIMER => {
             event_loop_state.timers.handle_timer(wparam.0);
         }
@@ -83,15 +81,6 @@ pub unsafe extern "system" fn message_wnd_proc(
             drop(Rc::from_raw(event_loop_state_ptr));
         }
         _ => {}
-    }));
-
-    if let Err(panic) = result {
-        event_loop_state.propagate_panic(panic);
-    }
-
-    // If a panic occurs while dropping the Rc<EventLoopState>, the only thing left to do is abort.
-    if let Err(_panic) = panic::catch_unwind(AssertUnwindSafe(move || drop(event_loop_state))) {
-        std::process::abort();
     }
 
     DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -121,7 +110,6 @@ impl<'a> Drop for RunGuard<'a> {
 
 pub struct EventLoopState {
     pub running: Cell<bool>,
-    pub panic: Cell<Option<Box<dyn Any + Send>>>,
     pub message_class: PCWSTR,
     pub message_hwnd: HWND,
     pub window_class: PCWSTR,
@@ -129,18 +117,6 @@ pub struct EventLoopState {
     pub timers: Timers,
     pub vsync_threads: VsyncThreads,
     pub windows: RefCell<HashMap<isize, Rc<WindowState>>>,
-}
-
-impl EventLoopState {
-    pub(crate) fn propagate_panic(&self, panic: Box<dyn Any + Send + 'static>) {
-        // If we own the event loop, exit and propagate the panic upwards. Otherwise, just abort.
-        if self.running.get() {
-            self.panic.set(Some(panic));
-            unsafe { PostQuitMessage(0) };
-        } else {
-            std::process::abort();
-        }
-    }
 }
 
 impl Drop for EventLoopState {
@@ -193,7 +169,6 @@ impl EventLoopState {
 
         let state = Rc::new(EventLoopState {
             running: Cell::new(false),
-            panic: Cell::new(None),
             message_class,
             message_hwnd,
             window_class,
@@ -233,10 +208,6 @@ impl EventLoopState {
             }
         };
 
-        if let Some(panic) = self.panic.take() {
-            panic::resume_unwind(panic);
-        }
-
         result
     }
 
@@ -265,10 +236,6 @@ impl EventLoopState {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-        }
-
-        if let Some(panic) = self.panic.take() {
-            panic::resume_unwind(panic);
         }
 
         Ok(())
